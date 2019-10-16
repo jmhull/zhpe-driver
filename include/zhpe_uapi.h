@@ -256,14 +256,7 @@ union zhpe_hw_rdm_entry {
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
-enum zhpe_backend {
-    ZHPE_BACKEND_ZHPE = 1,
-    ZHPE_BACKEND_LIBFABRIC,
-    ZHPE_BACKEND_MAX,
-};
-
 struct zhpe_attr {
-    enum zhpe_backend   backend;
     uint32_t            max_tx_queues;
     uint32_t            max_rx_queues;
     uint32_t            max_tx_qlen;

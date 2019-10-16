@@ -133,6 +133,8 @@ struct zhpe_req_INIT {
 
 struct zhpe_rsp_INIT {
     struct zhpe_common_hdr hdr;
+    uint32_t            magic;
+    struct zhpe_attr    attr;
     uuid_t              uuid;
     uint64_t            global_shared_offset; /* triggered counters */
     uint32_t            global_shared_size;
@@ -338,23 +340,15 @@ union zhpe_op {
     union zhpe_rsp     rsp;
 };
 
-#define ZHPE_GLOBAL_SHARED_VERSION    ((uint32_t)1)
 #define SLICES                        4
 #define VECTORS_PER_SLICE             32
 #define MAX_IRQ_VECTORS               (VECTORS_PER_SLICE * SLICES)
 
 struct zhpe_global_shared_data {
-    uint32_t            magic;
-    uint32_t            version;
-    uint32_t            debug_flags;
-    struct zhpe_attr    default_attr;
     uint32_t            triggered_counter[MAX_IRQ_VECTORS];
 };
 
-#define ZHPE_LOCAL_SHARED_VERSION    ((uint32_t)1)
 struct zhpe_local_shared_data {
-    uint32_t            magic;
-    uint32_t            version;
     uint32_t            handled_counter[MAX_IRQ_VECTORS];
 };
 
