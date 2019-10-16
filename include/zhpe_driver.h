@@ -139,9 +139,15 @@ struct xdm_qcm_header {
     uint64_t rv18             : 32;
 };
 
+struct xdm_qcm_cmd_buf {
+    uint64_t                  bytes8[8];
+};
+
 struct xdm_qcm {
     struct xdm_qcm_header     hdr;
-    uint64_t rv19[8159];
+    uint64_t                  rv19[223];
+    struct xdm_qcm_cmd_buf    buf[16];
+    uint64_t                  rv20[7808];
 };
 
 struct rdm_qcm_header {

@@ -107,7 +107,7 @@ enum {
 };
 
 /* ZHPE_MAGIC == 'ZHPE' */
-#define ZHPE_MAGIC      (0x47454E5A)
+#define ZHPE_MAGIC      ((uint32_t)0x47454E5A)
 
 #define ZHPE_ENTRY_LEN  (64U)
 
@@ -232,25 +232,6 @@ struct zhpe_rsp_UUID_FREE {
 #define SLICE_DEMAND 0x80
 #define ALL_SLICES 0x0f
 
-struct zhpe_qcm {
-    uint32_t           size;   /* Bytes allocated for the QCM */
-    uint64_t           off;    /* File descriptor offset to the QCM */
-};
-
-struct zhpe_queue {
-    uint32_t           ent;    /* Number of entries in the queue */
-    uint32_t           size;   /* Bytes allocated for the queue */
-    uint64_t           off;    /* File descriptor offset to the queue */
-};
-
-struct zhpe_xqinfo {
-    struct zhpe_qcm     qcm;   /* XDM Queue Control Memory */
-    struct zhpe_queue   cmdq;  /* XDM Command Queue */
-    struct zhpe_queue   cmplq; /* XDM Completion Queue */
-    uint8_t             slice; /* HW slice number which allocated the queues */
-    uint8_t             queue; /* HW queue number */
-};
-
 /*
  * Traffic class abstraction for user space. Used in zhpe_req_XQALLOC
  * traffic_class field. Mapping to actual Gen-Z traffic class is
@@ -289,22 +270,13 @@ struct zhpe_rsp_XQALLOC {
     struct zhpe_xqinfo   	info;
 };
 
-struct zhpe_req_XQFREE { 
-    struct zhpe_common_hdr	 hdr; 
-    struct zhpe_xqinfo		 info; 
+struct zhpe_req_XQFREE {
+    struct zhpe_common_hdr	 hdr;
+    struct zhpe_xqinfo		 info;
 };
 
 struct zhpe_rsp_XQFREE {
     struct zhpe_common_hdr hdr;
-};
-
-struct zhpe_rqinfo {
-    struct zhpe_qcm     qcm;   /* XDM Queue Control Memory */
-    struct zhpe_queue   cmplq; /* XDM Completion Queue */
-    uint8_t             slice; /* HW slice number which allocated the queues */
-    uint8_t             queue; /* HW queue number */
-    uint32_t            rspctxid; /* RSPCTXID to use with EnqA */
-    uint32_t            irq_vector; /* interrupt vector that maps to poll dev */
 };
 
 struct zhpe_req_RQALLOC {
@@ -366,23 +338,23 @@ union zhpe_op {
     union zhpe_rsp     rsp;
 };
 
-#define ZHPE_GLOBAL_SHARED_VERSION    (1)
+#define ZHPE_GLOBAL_SHARED_VERSION    ((uint32_t)1)
 #define SLICES                        4
 #define VECTORS_PER_SLICE             32
 #define MAX_IRQ_VECTORS               (VECTORS_PER_SLICE * SLICES)
 
 struct zhpe_global_shared_data {
-    uint                magic;
-    uint                version;
-    uint                debug_flags;
+    uint32_t            magic;
+    uint32_t            version;
+    uint32_t            debug_flags;
     struct zhpe_attr    default_attr;
     uint32_t            triggered_counter[MAX_IRQ_VECTORS];
 };
 
-#define ZHPE_LOCAL_SHARED_VERSION    (1)
+#define ZHPE_LOCAL_SHARED_VERSION    ((uint32_t)1)
 struct zhpe_local_shared_data {
-    uint                magic;
-    uint                version;
+    uint32_t            magic;
+    uint32_t            version;
     uint32_t            handled_counter[MAX_IRQ_VECTORS];
 };
 
@@ -401,6 +373,13 @@ struct zhpe_xdm_active_status_error {
 #define ZHPE_XDM_QCM_STOP_OFFSET		0x40
 #define ZHPE_XDM_QCM_CMD_QUEUE_TAIL_OFFSET	0x80
 #define ZHPE_XDM_QCM_CMD_QUEUE_HEAD_OFFSET	0xc0
+/*
+ * XDM command buffers should be written with as two 32 AVX ops, byte 0 is
+ * is the trigger, so write the second half, first.
+ */
+#define ZHPE_XDM_QCM_CMD_BUF_OFFSET             0x800
+#define ZHPE_XDM_QCM_CMD_BUF_COUNT              0x10
+
 struct zhpe_xdm_cmpl_queue_tail_toggle {
     uint64_t cmpl_q_tail_idx  : 16;
     uint64_t rv1              : 15;

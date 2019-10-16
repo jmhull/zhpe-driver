@@ -83,15 +83,19 @@ enum zhpe_hw_atomic {
 };
 
 enum zhpe_hw_cq {
-    ZHPE_HW_CQ_STATUS_SUCCESS               = 0x00,
-    ZHPE_HW_CQ_STATUS_CMD_TRUNCATED         = 0x01,
-    ZHPE_HW_CQ_STATUS_BAD_CMD               = 0x02,
-    ZHPE_HW_CQ_STATUS_LOCAL_UNRECOVERABLE   = 0x11,
-    ZHPE_HW_CQ_STATUS_FABRIC_UNRECOVERABLE  = 0x21,
-    ZHPE_HW_CQ_STATUS_FABRIC_NO_RESOURCES   = 0x22,
-    ZHPE_HW_CQ_STATUS_FABRIC_ACCESS         = 0x23,
+    ZHPE_HW_CQ_STATUS_SUCCESS                   = 0x00,
+    ZHPE_HW_CQ_STATUS_XDM_PUT_READ_ERROR        = 0x01,
+    ZHPE_HW_CQ_STATUS_XDM_BAD_COMMAND           = 0x02,
+    ZHPE_HW_CQ_STATUS_GENZ_UNSUPPORTED_REQ      = 0x82,
+    ZHPE_HW_CQ_STATUS_GENZ_MALFORMED_PKT        = 0x83,
+    ZHPE_HW_CQ_STATUS_GENZ_PKT_EXECUTION_ERROR  = 0x85,
+    ZHPE_HW_CQ_STATUS_GENZ_INVALID_PERMISSION   = 0x87,
+    ZHPE_HW_CQ_STATUS_GENZ_COMP_CONTAINMENT     = 0x88,
+    ZHPE_HW_CQ_STATUS_GENZ_RDM_QUEUE_FULL       = 0x93,
+    ZHPE_HW_CQ_STATUS_GENZ_UNSUPPORTED_SVC      = 0x95,
+    ZHPE_HW_CQ_STATUS_GENZ_RETRIES_EXCEEDED     = 0xA2,
 
-    ZHPE_HW_CQ_VALID                        = 0x01,
+    ZHPE_HW_CQ_VALID                            = 0x01,
 };
 
 union zhpe_result {
@@ -104,6 +108,16 @@ struct zhpe_cq_entry {
     uint8_t             valid : 1;
     uint8_t             rv1   : 4;
     uint8_t             qd    : 3;  /* EnqA only */
+    uint8_t             status;
+    uint16_t            index;
+    uint8_t             filler1[4];
+    void                *context;
+    uint8_t             filler2[16];
+    union zhpe_result   result;
+};
+
+struct zhpe_cq_entry_alt {
+    uint8_t             valid;
     uint8_t             status;
     uint16_t            index;
     uint8_t             filler1[4];
@@ -172,8 +186,8 @@ struct zhpe_hw_wq_atomic {
     };
 };
 
-#define ZHPE_GCID_BITS          28
-#define ZHPE_CTXID_BITS         24
+#define ZHPE_GCID_BITS          (28U)
+#define ZHPE_CTXID_BITS         (24U)
 
 struct zhpe_hw_wq_enqa {
     struct zhpe_hw_wq_hdr hdr;
@@ -184,6 +198,15 @@ struct zhpe_hw_wq_enqa {
     uint8_t             payload[ZHPE_ENQA_MAX];
 };
 
+#define ZHPE_ENQA_GCID_SHIFT    (4U)
+
+struct zhpe_hw_wq_enqa_alt {
+    struct zhpe_hw_wq_hdr hdr;
+    uint32_t            dgcid;
+    uint32_t            rspctxid;
+    uint8_t             payload[ZHPE_ENQA_MAX];
+};
+
 union zhpe_hw_wq_entry {
     struct zhpe_hw_wq_hdr hdr;
     struct zhpe_hw_wq_nop nop;
@@ -191,11 +214,14 @@ union zhpe_hw_wq_entry {
     struct zhpe_hw_wq_imm imm;
     struct zhpe_hw_wq_atomic atm;
     struct zhpe_hw_wq_enqa enqa;
+    struct zhpe_hw_wq_enqa_alt enqa_alt;
+    uint64_t            bytes8[8];
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
 union zhpe_hw_cq_entry {
     struct zhpe_cq_entry entry;
+    struct zhpe_cq_entry_alt entry_alt;
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
@@ -213,8 +239,20 @@ struct zhpe_rdm_entry {
     uint8_t             payload[ZHPE_ENQA_MAX];
 };
 
+struct zhpe_rdm_hdr_alt {
+    uint32_t            sgcid;
+    uint32_t            reqctxid;
+};
+
+struct zhpe_rdm_entry_alt {
+    struct zhpe_rdm_hdr_alt hdr;
+    uint8_t             filler1[4];
+    uint8_t             payload[ZHPE_ENQA_MAX];
+};
+
 union zhpe_hw_rdm_entry {
     struct zhpe_rdm_entry entry;
+    struct zhpe_rdm_entry_alt entry_alt;
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
@@ -249,6 +287,34 @@ static inline void mcommit(void)
 
 #define CPUID_8000_0008                 (0x80000008)
 #define CPUID_8000_0008_EBX_MCOMMIT     (0x100)
+
+struct zhpe_qcm {
+    uint32_t           size;   /* Bytes allocated for the QCM */
+    uint64_t           off;    /* File descriptor offset to the QCM */
+};
+
+struct zhpe_queue {
+    uint32_t           ent;    /* Number of entries in the queue */
+    uint32_t           size;   /* Bytes allocated for the queue */
+    uint64_t           off;    /* File descriptor offset to the queue */
+};
+
+struct zhpe_xqinfo {
+    struct zhpe_qcm     qcm;   /* XDM Queue Control Memory */
+    struct zhpe_queue   cmdq;  /* XDM Command Queue */
+    struct zhpe_queue   cmplq; /* XDM Completion Queue */
+    uint8_t             slice; /* HW slice number which allocated the queues */
+    uint8_t             queue; /* HW queue number */
+};
+
+struct zhpe_rqinfo {
+    struct zhpe_qcm     qcm;   /* XDM Queue Control Memory */
+    struct zhpe_queue   cmplq; /* XDM Completion Queue */
+    uint8_t             slice; /* HW slice number which allocated the queues */
+    uint8_t             queue; /* HW queue number */
+    uint32_t            rspctxid; /* RSPCTXID to use with EnqA */
+    uint32_t            irq_vector; /* interrupt vector that maps to poll dev */
+};
 
 _EXTERN_C_END
 
