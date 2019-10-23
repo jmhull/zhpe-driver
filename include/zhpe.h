@@ -383,8 +383,11 @@ struct zhpe_xdm_cmpl_queue_tail_toggle {
 #define ZHPE_XDM_QCM_CMPL_QUEUE_TAIL_TOGGLE_OFFSET	0x100
 
 /* RDM QCM access macros and structures. Reads and writes must be 64 bits */
-#define ZHPE_RDM_QCM_ACTIVE				0x18
-#define ZHPE_RDM_QCM_STOP_OFFSET			0x40
+struct zhpe_rdm_active {
+    uint64_t active : 1;
+};
+#define ZHPE_RDM_QCM_ACTIVE_OFFSET			0x18
+#define ZHPE_RDM_QCM_STOP_OFFSET			0x4
 struct zhpe_rdm_rcv_queue_tail_toggle {
     uint64_t rcv_q_tail_idx   : 20;
     uint64_t rv1              : 11;
