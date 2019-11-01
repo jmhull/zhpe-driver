@@ -222,6 +222,7 @@ class rqinfo(Structure):
                 ('cmplq',      queue),
                 ('slice',      c_u8),
                 ('queue',      c_u8),
+                ('clump',      c_u16),
                 ('rspctxid',   c_u32),
                 ('irq_vector', c_u32)
                 ]

@@ -1387,16 +1387,17 @@ int zhpe_req_RQALLOC(struct zhpe_req_RQALLOC *req,
         goto done;
     }
     /* set bit in this file_data as owner */
+    sl = &(fdata->bridge->slice[slice]);
     spin_lock(&fdata->rdm_queue_lock);
     set_bit((slice*zhpe_rdm_queues_per_slice)+queue, fdata->rdm_queues);
     spin_unlock(&fdata->rdm_queue_lock);
     rsp->info.slice = slice;
     rsp->info.queue = queue;
+    rsp->info.clump = MAX_RDM_QUEUES_PER_SLICE / sl->irq_vectors_count;
     rsp->info.irq_vector = irq_vector;
     rsp->info.rspctxid = zhpe_rspctxid_alloc(slice, queue);
 
     /* Get a pointer to the qcm chosen to initialize it's fields */
-    sl = &(fdata->bridge->slice[slice]);
     hw_qcm_addr = &(sl->bar->rdm[queue*2]);
 
     debug(DEBUG_RQUEUE, "hw_qcm_addr for slice %d queue %d queue init 0x%px\n",

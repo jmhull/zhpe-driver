@@ -292,8 +292,8 @@ extern uint64_t zhpe_reqz_phy_cpuvisible_off;
 #define PAGE_GRID_MIN_PAGESIZE       12
 #define PAGE_GRID_MAX_PAGESIZE       48
 
-#define MAX_RDM_QUEUES_PER_SLICE	256
-#define MAX_XDM_QUEUES_PER_SLICE	256
+#define MAX_RDM_QUEUES_PER_SLICE        ZHPE_MAX_RDMQS_PER_SLICE
+#define MAX_XDM_QUEUES_PER_SLICE        ZHPE_MAX_XDMQS_PER_SLICE
 
 struct req_zmmu {
     struct req_pte                pte[MAX_REQ_ZMMU_ENTRIES];

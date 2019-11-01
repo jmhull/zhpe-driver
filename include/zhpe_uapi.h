@@ -50,8 +50,17 @@
 
 _EXTERN_C_BEG
 
-#define ZHPE_IMM_MAX            (32)
-#define ZHPE_ENQA_MAX           (52)
+#define ZHPE_MAX_SLICES         ((size_t)4)
+#define ZHPE_MAX_IRQS_PER_SLICE ((size_t)32)
+#define ZHPE_MAX_RDMQS_PER_SLICE ((size_t)256)
+#define ZHPE_MAX_XDMQS_PER_SLICE ((size_t)256)
+
+#define ZHPE_MAX_IRQS   (ZHPE_MAX_IRQS_PER_SLICE * ZHPE_MAX_SLICES)
+#define ZHPE_MAX_RDMQS  (ZHPE_MAX_RDMQS_PER_SLICE * ZHPE_MAX_SLICES)
+#define ZHPE_MAX_XDMQS  (ZHPE_MAX_XDMQS_PER_SLICE * ZHPE_MAX_SLICES)
+
+#define ZHPE_MAX_IMM            ((size_t)32)
+#define ZHPE_MAX_ENQA           ((size_t)52)
 
 #define ZHPE_MR_GET             ((uint32_t)1 << 0)
 #define ZHPE_MR_PUT             ((uint32_t)1 << 1)
@@ -98,7 +107,7 @@ enum zhpe_hw_cq_status {
 };
 
 union zhpe_result {
-    char                data[ZHPE_IMM_MAX];
+    char                data[ZHPE_MAX_IMM];
     uint32_t            atomic32;
     uint64_t            atomic64;
 };
@@ -107,7 +116,7 @@ union zhpe_result {
  * Both XDM and RDM completion queues have their valid bit in bit 0 of the
  * first byte; the meaning of the bit flips with each traversal of the ring.
  */
-#define ZHPE_CMP_ENT_VALID_MASK (1);
+#define ZHPE_CMP_ENT_VALID_MASK (1U)
 
 struct zhpe_cq_entry {
     uint8_t             valid : 1;
@@ -117,7 +126,8 @@ struct zhpe_cq_entry {
     uint16_t            index;
     uint8_t             filler1[4];
     void                *context;
-    uint8_t             filler2[16];
+    void                *cqe;
+    uint8_t             filler2[8];
     union zhpe_result   result;
 };
 
@@ -166,7 +176,7 @@ struct zhpe_hw_wq_imm {
     uint32_t            len;
     uint64_t            rem_addr;
     uint8_t             filler[16];
-    uint8_t             data[ZHPE_IMM_MAX];
+    uint8_t             data[ZHPE_MAX_IMM];
 };
 
 struct zhpe_hw_wq_atomic {
@@ -190,7 +200,7 @@ struct zhpe_hw_wq_enqa {
     uint32_t            dgcid    : ZHPE_GCID_BITS;
     uint32_t            rspctxid : ZHPE_CTXID_BITS;
     uint32_t            rv2      :  8;
-    uint8_t             payload[ZHPE_ENQA_MAX];
+    uint8_t             payload[ZHPE_MAX_ENQA];
 };
 
 union zhpe_hw_wq_entry {
@@ -220,7 +230,7 @@ struct zhpe_rdm_hdr {
 struct zhpe_rdm_entry {
     struct zhpe_rdm_hdr hdr;
     uint8_t             filler1[4];
-    uint8_t             payload[ZHPE_ENQA_MAX];
+    uint8_t             payload[ZHPE_MAX_ENQA];
 };
 
 union zhpe_hw_rdm_entry {
@@ -277,6 +287,7 @@ struct zhpe_rqinfo {
     struct zhpe_queue   cmplq; /* XDM Completion Queue */
     uint8_t             slice; /* HW slice number which allocated the queues */
     uint8_t             queue; /* HW queue number */
+    uint16_t            clump; /* irq clump size (can be 256) */
     uint32_t            rspctxid; /* RSPCTXID to use with EnqA */
     uint32_t            irq_vector; /* interrupt vector that maps to poll dev */
 };
