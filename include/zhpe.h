@@ -268,13 +268,13 @@ struct zhpe_req_XQALLOC {
 };
 
 struct zhpe_rsp_XQALLOC {
-    struct zhpe_common_hdr	hdr;
-    struct zhpe_xqinfo   	info;
+    struct zhpe_common_hdr hdr;
+    struct zhpe_xqinfo  info;
 };
 
 struct zhpe_req_XQFREE {
-    struct zhpe_common_hdr	 hdr;
-    struct zhpe_xqinfo		 info;
+    struct zhpe_common_hdr hdr;
+    struct zhpe_xqinfo	info;
 };
 
 struct zhpe_rsp_XQFREE {
@@ -282,24 +282,23 @@ struct zhpe_rsp_XQFREE {
 };
 
 struct zhpe_req_RQALLOC {
-     struct zhpe_common_hdr hdr;
-     uint32_t            cmplq_ent;          /* Entries in the cmplq minus 1.
-					      * e.g. use 1 for 2 entries.  */
-     uint8_t             slice_mask;         /* Control HW slice allocation */
+    struct zhpe_common_hdr hdr;
+    uint32_t            cmplq_ent;           /* Minimum entries the queue. */
+    uint8_t             slice_mask;          /* Control HW slice allocation */
 };
 
 struct zhpe_rsp_RQALLOC {
-     struct zhpe_common_hdr     hdr;
-     struct zhpe_rqinfo   	info;
+    struct zhpe_common_hdr hdr;
+    struct zhpe_rqinfo  info;
 };
 
 struct zhpe_req_RQFREE {
-     struct zhpe_common_hdr     hdr;
-     struct zhpe_rqinfo   	info;
+    struct zhpe_common_hdr hdr;
+    struct zhpe_rqinfo  info;
 };
 
 struct zhpe_rsp_RQFREE {
-     struct zhpe_common_hdr hdr;
+    struct zhpe_common_hdr hdr;
 };
 
 union zhpe_req {
@@ -340,8 +339,8 @@ union zhpe_op {
     union zhpe_rsp     rsp;
 };
 
-#define SLICES                        4
-#define VECTORS_PER_SLICE             32
+#define SLICES                        ZHPE_MAX_SLICES
+#define VECTORS_PER_SLICE             ZHPE_MAX_IRQS_PER_SLICE
 #define MAX_IRQ_VECTORS               (VECTORS_PER_SLICE * SLICES)
 
 struct zhpe_global_shared_data {
@@ -363,6 +362,7 @@ struct zhpe_xdm_active_status_error {
     uint64_t error            : 1;
     uint64_t rv3              : 32;
 };
+#define ZHPE_XDM_QCM_STATUS_CMD_ERROR           0x1
 #define ZHPE_XDM_QCM_ACTIVE_STATUS_ERROR_OFFSET	0x28
 #define ZHPE_XDM_QCM_STOP_OFFSET		0x40
 #define ZHPE_XDM_QCM_CMD_QUEUE_TAIL_OFFSET	0x80
@@ -383,7 +383,10 @@ struct zhpe_xdm_cmpl_queue_tail_toggle {
 #define ZHPE_XDM_QCM_CMPL_QUEUE_TAIL_TOGGLE_OFFSET	0x100
 
 /* RDM QCM access macros and structures. Reads and writes must be 64 bits */
-#define ZHPE_RDM_QCM_ACTIVE				0x18
+struct zhpe_rdm_active {
+    uint64_t active : 1;
+};
+#define ZHPE_RDM_QCM_ACTIVE_OFFSET			0x18
 #define ZHPE_RDM_QCM_STOP_OFFSET			0x40
 struct zhpe_rdm_rcv_queue_tail_toggle {
     uint64_t rcv_q_tail_idx   : 20;

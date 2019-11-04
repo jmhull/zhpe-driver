@@ -50,8 +50,17 @@
 
 _EXTERN_C_BEG
 
-#define ZHPE_IMM_MAX            (32)
-#define ZHPE_ENQA_MAX           (52)
+#define ZHPE_MAX_SLICES         ((size_t)4)
+#define ZHPE_MAX_IRQS_PER_SLICE ((size_t)32)
+#define ZHPE_MAX_RDMQS_PER_SLICE ((size_t)256)
+#define ZHPE_MAX_XDMQS_PER_SLICE ((size_t)256)
+
+#define ZHPE_MAX_IRQS   (ZHPE_MAX_IRQS_PER_SLICE * ZHPE_MAX_SLICES)
+#define ZHPE_MAX_RDMQS  (ZHPE_MAX_RDMQS_PER_SLICE * ZHPE_MAX_SLICES)
+#define ZHPE_MAX_XDMQS  (ZHPE_MAX_XDMQS_PER_SLICE * ZHPE_MAX_SLICES)
+
+#define ZHPE_MAX_IMM            ((size_t)32)
+#define ZHPE_MAX_ENQA           ((size_t)52)
 
 #define ZHPE_MR_GET             ((uint32_t)1 << 0)
 #define ZHPE_MR_PUT             ((uint32_t)1 << 1)
@@ -82,7 +91,7 @@ enum zhpe_hw_atomic {
     ZHPE_HW_ATOMIC_SIZE_MASK    = 0x0E,
 };
 
-enum zhpe_hw_cq {
+enum zhpe_hw_cq_status {
     ZHPE_HW_CQ_STATUS_SUCCESS                   = 0x00,
     ZHPE_HW_CQ_STATUS_XDM_PUT_READ_ERROR        = 0x01,
     ZHPE_HW_CQ_STATUS_XDM_BAD_COMMAND           = 0x02,
@@ -95,29 +104,24 @@ enum zhpe_hw_cq {
     ZHPE_HW_CQ_STATUS_GENZ_UNSUPPORTED_SVC      = 0x95,
     ZHPE_HW_CQ_STATUS_GENZ_RETRIES_EXCEEDED     = 0xA2,
 
-    ZHPE_HW_CQ_VALID                            = 0x01,
 };
 
 union zhpe_result {
-    char                data[ZHPE_IMM_MAX];
+    char                data[ZHPE_MAX_IMM];
     uint32_t            atomic32;
     uint64_t            atomic64;
 };
+
+/*
+ * Both XDM and RDM completion queues have their valid bit in bit 0 of the
+ * first byte; the meaning of the bit flips with each traversal of the ring.
+ */
+#define ZHPE_CMP_ENT_VALID_MASK (1U)
 
 struct zhpe_cq_entry {
     uint8_t             valid : 1;
     uint8_t             rv1   : 4;
     uint8_t             qd    : 3;  /* EnqA only */
-    uint8_t             status;
-    uint16_t            index;
-    uint8_t             filler1[4];
-    void                *context;
-    uint8_t             filler2[16];
-    union zhpe_result   result;
-};
-
-struct zhpe_cq_entry_alt {
-    uint8_t             valid;
     uint8_t             status;
     uint16_t            index;
     uint8_t             filler1[4];
@@ -171,7 +175,7 @@ struct zhpe_hw_wq_imm {
     uint32_t            len;
     uint64_t            rem_addr;
     uint8_t             filler[16];
-    uint8_t             data[ZHPE_IMM_MAX];
+    uint8_t             data[ZHPE_MAX_IMM];
 };
 
 struct zhpe_hw_wq_atomic {
@@ -195,16 +199,7 @@ struct zhpe_hw_wq_enqa {
     uint32_t            dgcid    : ZHPE_GCID_BITS;
     uint32_t            rspctxid : ZHPE_CTXID_BITS;
     uint32_t            rv2      :  8;
-    uint8_t             payload[ZHPE_ENQA_MAX];
-};
-
-#define ZHPE_ENQA_GCID_SHIFT    (4U)
-
-struct zhpe_hw_wq_enqa_alt {
-    struct zhpe_hw_wq_hdr hdr;
-    uint32_t            dgcid;
-    uint32_t            rspctxid;
-    uint8_t             payload[ZHPE_ENQA_MAX];
+    uint8_t             payload[ZHPE_MAX_ENQA];
 };
 
 union zhpe_hw_wq_entry {
@@ -214,14 +209,12 @@ union zhpe_hw_wq_entry {
     struct zhpe_hw_wq_imm imm;
     struct zhpe_hw_wq_atomic atm;
     struct zhpe_hw_wq_enqa enqa;
-    struct zhpe_hw_wq_enqa_alt enqa_alt;
     uint64_t            bytes8[8];
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
 union zhpe_hw_cq_entry {
     struct zhpe_cq_entry entry;
-    struct zhpe_cq_entry_alt entry_alt;
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
@@ -236,23 +229,11 @@ struct zhpe_rdm_hdr {
 struct zhpe_rdm_entry {
     struct zhpe_rdm_hdr hdr;
     uint8_t             filler1[4];
-    uint8_t             payload[ZHPE_ENQA_MAX];
-};
-
-struct zhpe_rdm_hdr_alt {
-    uint32_t            sgcid;
-    uint32_t            reqctxid;
-};
-
-struct zhpe_rdm_entry_alt {
-    struct zhpe_rdm_hdr_alt hdr;
-    uint8_t             filler1[4];
-    uint8_t             payload[ZHPE_ENQA_MAX];
+    uint8_t             payload[ZHPE_MAX_ENQA];
 };
 
 union zhpe_hw_rdm_entry {
     struct zhpe_rdm_entry entry;
-    struct zhpe_rdm_entry_alt entry_alt;
     uint8_t             filler[ZHPE_HW_ENTRY_LEN];
 };
 
@@ -305,6 +286,7 @@ struct zhpe_rqinfo {
     struct zhpe_queue   cmplq; /* XDM Completion Queue */
     uint8_t             slice; /* HW slice number which allocated the queues */
     uint8_t             queue; /* HW queue number */
+    uint16_t            clump; /* irq clump size (can be 256) */
     uint32_t            rspctxid; /* RSPCTXID to use with EnqA */
     uint32_t            irq_vector; /* interrupt vector that maps to poll dev */
 };
