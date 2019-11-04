@@ -126,8 +126,7 @@ struct zhpe_cq_entry {
     uint16_t            index;
     uint8_t             filler1[4];
     void                *context;
-    void                *cqe;
-    uint8_t             filler2[8];
+    uint8_t             filler2[16];
     union zhpe_result   result;
 };
 
