@@ -226,6 +226,9 @@ static int msg_xdm_queue_cmd(struct xdm_info *xdmi,
                 break;
             }
             /* Revisit: examine status */
+            if (cq_entry.status)
+                debug(DEBUG_MSG, "idx 0x%x status 0x%0x\n",
+                      xdmi->cmplq_head, cq_entry.status);
             more = cmpl_ret;
         } while (more);
     }
