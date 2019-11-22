@@ -240,22 +240,29 @@ struct zhpe_rsp_UUID_FREE {
  * undefined to user space.
  */
 enum {
-	ZHPE_TC_0 = 0,
-	ZHPE_TC_1 = 1,
-	ZHPE_TC_2 = 2,
-	ZHPE_TC_3 = 3,
-	ZHPE_TC_4 = 4,
-	ZHPE_TC_5 = 5,
-	ZHPE_TC_6 = 6,
-	ZHPE_TC_7 = 7,
-	ZHPE_TC_8 = 8,
-	ZHPE_TC_9 = 9,
-	ZHPE_TC_10 = 10,
-	ZHPE_TC_11 = 11,
-	ZHPE_TC_12 = 12,
-	ZHPE_TC_13 = 13,
-	ZHPE_TC_14 = 14,
-	ZHPE_TC_15 = 15
+    ZHPE_TC_0           = 0,
+    ZHPE_TC_1           = 1,
+    ZHPE_TC_2           = 2,
+    ZHPE_TC_3           = 3,
+    ZHPE_TC_4           = 4,
+    ZHPE_TC_5           = 5,
+    ZHPE_TC_6           = 6,
+    ZHPE_TC_7           = 7,
+    ZHPE_TC_8           = 8,
+    ZHPE_TC_9           = 9,
+    ZHPE_TC_10          = 10,
+    ZHPE_TC_11          = 11,
+    ZHPE_TC_12          = 12,
+    ZHPE_TC_13          = 13,
+    ZHPE_TC_14          = 14,
+    ZHPE_TC_15          = 15,
+    ZHPE_MAX_TC         = ZHPE_TC_15,
+};
+
+enum {
+    ZHPE_PRIO_LOW       = 0,
+    ZHPE_PRIO_HIGH      = 1,
+    ZHPE_MAX_PRIO       = ZHPE_PRIO_HIGH,
 };
 
 struct zhpe_req_XQALLOC {
