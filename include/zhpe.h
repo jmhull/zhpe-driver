@@ -234,37 +234,6 @@ struct zhpe_rsp_UUID_FREE {
 #define SLICE_DEMAND 0x80
 #define ALL_SLICES 0x0f
 
-/*
- * Traffic class abstraction for user space. Used in zhpe_req_XQALLOC
- * traffic_class field. Mapping to actual Gen-Z traffic class is
- * undefined to user space.
- */
-enum {
-    ZHPE_TC_0           = 0,
-    ZHPE_TC_1           = 1,
-    ZHPE_TC_2           = 2,
-    ZHPE_TC_3           = 3,
-    ZHPE_TC_4           = 4,
-    ZHPE_TC_5           = 5,
-    ZHPE_TC_6           = 6,
-    ZHPE_TC_7           = 7,
-    ZHPE_TC_8           = 8,
-    ZHPE_TC_9           = 9,
-    ZHPE_TC_10          = 10,
-    ZHPE_TC_11          = 11,
-    ZHPE_TC_12          = 12,
-    ZHPE_TC_13          = 13,
-    ZHPE_TC_14          = 14,
-    ZHPE_TC_15          = 15,
-    ZHPE_MAX_TC         = ZHPE_TC_15,
-};
-
-enum {
-    ZHPE_PRIO_LOW       = 0,
-    ZHPE_PRIO_HIGH      = 1,
-    ZHPE_MAX_PRIO       = ZHPE_PRIO_HIGH,
-};
-
 struct zhpe_req_XQALLOC {
      struct zhpe_common_hdr hdr;
      uint32_t            cmdq_ent;           /* Minimum entries in the cmdq */
@@ -402,7 +371,6 @@ struct zhpe_rdm_rcv_queue_tail_toggle {
     uint64_t rv2              : 32;
 };
 #define ZHPE_RDM_QCM_RCV_QUEUE_TAIL_TOGGLE_OFFSET	0x80
-#define ZHPE_RDM_QCM_RCV_QUEUE_HEAD_OFFSET		0xc0
 
 _EXTERN_C_END
 
