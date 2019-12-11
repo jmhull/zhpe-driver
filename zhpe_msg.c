@@ -272,7 +272,7 @@ static int msg_rdm_get_cmpl(struct rdm_info *rdmi, struct zhpe_rdm_hdr *hdr,
     }
     /* copy RDM completion entry to caller */
     *hdr = rdm_entry->hdr;
-    memcpy(msg, rdm_entry->payload, sizeof(*msg));
+    memcpy(msg, &rdm_entry->payload, sizeof(*msg));
     /* do mod-add to compute next head value */
     next_head = (head + 1) % rdmi->cmplq_ent;
     /* toggle cur_valid on wrap */

@@ -226,13 +226,17 @@ struct zhpe_hw_wq_atomic {
 #define ZHPE_GCID_BITS          (28U)
 #define ZHPE_CTXID_BITS         (24U)
 
+struct zhpe_enqa_payload {
+    uint8_t             data[ZHPE_MAX_ENQA];
+};
+
 struct zhpe_hw_wq_enqa {
     struct zhpe_hw_wq_hdr hdr;
     uint32_t            rv1      :  4;
     uint32_t            dgcid    : ZHPE_GCID_BITS;
     uint32_t            rspctxid : ZHPE_CTXID_BITS;
     uint32_t            rv2      :  8;
-    uint8_t             payload[ZHPE_MAX_ENQA];
+    struct zhpe_enqa_payload payload;
 };
 
 union zhpe_hw_wq_entry {
@@ -262,7 +266,7 @@ struct zhpe_rdm_hdr {
 struct zhpe_rdm_entry {
     struct zhpe_rdm_hdr hdr;
     uint8_t             filler1[4];
-    uint8_t             payload[ZHPE_MAX_ENQA];
+    struct zhpe_enqa_payload payload;
 };
 
 union zhpe_hw_rdm_entry {
