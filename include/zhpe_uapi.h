@@ -134,9 +134,9 @@ enum {
 };
 
 enum {
-    ZHPE_PRIO_LOW       = 0,
-    ZHPE_PRIO_HIGH      = 1,
-    ZHPE_MAX_PRIO       = ZHPE_PRIO_HIGH,
+    ZHPE_PRIO_LO        = 0,
+    ZHPE_PRIO_HI        = 1,
+    ZHPE_MAX_PRIO       = ZHPE_PRIO_HI,
 };
 
 union zhpe_result {
@@ -157,9 +157,7 @@ struct zhpe_cq_entry {
     uint8_t             qd    : 3;  /* EnqA only */
     uint8_t             status;
     uint16_t            index;
-    uint8_t             filler1[4];
-    void                *context;
-    uint8_t             filler2[16];
+    uint8_t             filler[28];
     union zhpe_result   result;
 };
 
