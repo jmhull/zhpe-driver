@@ -911,7 +911,7 @@ static void xdm_qcm_setup(struct xdm_qcm *hw_qcm_addr,
     if (priority > ZHPE_MAX_PRIO) {
         debug(DEBUG_XQUEUE, "Invalid priority: %d. Default to 0.\n",
               priority);
-        qcm.priority = ZHPE_PRIO_LOW;
+        qcm.priority = ZHPE_PRIO_LO;
     }
     else {
         qcm.priority = priority;

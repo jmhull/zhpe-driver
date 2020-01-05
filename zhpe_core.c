@@ -1525,7 +1525,6 @@ static int zhpe_open(struct inode *inode, struct file *file)
 
     /* update the actual number of slices in the zhpe_attr */
     size = atomic_read(&zhpe_bridge.num_slices);
-    global_shared_data->default_attr.num_slices = size;
     if (!size) {
         debug(DEBUG_IO, "No device found\n");
         goto done;
