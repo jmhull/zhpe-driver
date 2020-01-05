@@ -348,7 +348,6 @@ struct zhpe_xdm_active_status_error {
  * is the trigger, so write the second half, first.
  */
 #define ZHPE_XDM_QCM_CMD_BUF_OFFSET             0x800
-#define ZHPE_XDM_QCM_CMD_BUF_COUNT              0x10
 
 struct zhpe_xdm_cmpl_queue_tail_toggle {
     uint64_t cmpl_q_tail_idx  : 16;

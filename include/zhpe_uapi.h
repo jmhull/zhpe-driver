@@ -62,6 +62,7 @@ _EXTERN_C_BEG
 #define ZHPE_MAX_IMM            ((size_t)32)
 #define ZHPE_MAX_ENQA           ((size_t)52)
 
+#define ZHPE_XDM_QCM_CMD_BUF_COUNT         0x10
 #define ZHPE_RDM_QCM_RCV_QUEUE_HEAD_OFFSET 0xc0
 
 #define ZHPE_MR_GET             ((uint32_t)1 << 0)
