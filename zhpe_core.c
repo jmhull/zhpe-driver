@@ -1760,9 +1760,12 @@ static int zhpe_probe(struct pci_dev *pdev,
             goto err_out;
         }
         pci_read_config_dword(pdev, pos + ZHPE_DVSEC_SLICE_OFF, &pslice_id);
+        dev_info(&pdev->dev, "%s:%s,%u,%d:SLICE_OFF 0x%x\n",
+                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
+                 pslice_id);
         vslice_id = pslice_id;
         pslice_id >>= ZHPE_DVSEC_PSLICE_SHIFT;
-        vslice_id &= ZHPE_DVSEC_SLICE_MASK;
+        pslice_id &= ZHPE_DVSEC_SLICE_MASK;
         vslice_id >>= ZHPE_DVSEC_VSLICE_SHIFT;
         vslice_id &= ZHPE_DVSEC_SLICE_MASK;
         pci_read_config_dword(pdev, pos + ZHPE_DVSEC_SLINK_BASE_OFF,

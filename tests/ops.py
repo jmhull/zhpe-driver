@@ -76,12 +76,14 @@ def parse_args():
                         help='fence every comand')
     parser.add_argument('-l', '--len', default=1024, type=int,
                         help='length of data transfer operations')
-    parser.add_argument('-o', '--op', default='get',
+    parser.add_argument('-o', '--op', default='nop',
                         help='operation get, put, get_imm, put_imm, nop, sync')
-    parser.add_argument('-q', '--queues', default=1, type=int,
-                        help='number of xdm queues')
     parser.add_argument('-P', '--post_mortem', action='store_true',
                         help='enter debugger on uncaught exception')
+    parser.add_argument('-q', '--queues', default=1, type=int,
+                        help='number of xdm queues')
+    parser.add_argument('-s', '--slice', default=0, type=int,
+                        help='slice 0-3')
     parser.add_argument('-v', '--verbosity', action='count', default=0,
                         help='increase output verbosity')
     parser.add_argument('-w', '--window', default=0, type=int,
@@ -125,8 +127,13 @@ def main():
             raise_err('-w option must be <= queue size')
             
         queues = []
+        smask = 1 << args.slice
+        smask |= 0x80
         for q in range(args.queues):
-            xdm = zhpe.XDM(conn, args.xdmq_size, args.xdmq_size, slice_mask=0x1)
+            xdm = zhpe.XDM(conn, args.xdmq_size, args.xdmq_size,
+                           slice_mask=smask)
+            print('XDM queue = {} slice = {}'.format(
+                xdm.rsp_xqa.info.queue, xdm.rsp_xqa.info.slice))
             queues.append(Queue(xdm, args.commands))
 
         cmd = zhpe.xdm_cmd()
