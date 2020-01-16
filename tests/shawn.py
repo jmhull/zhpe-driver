@@ -49,13 +49,6 @@ from zhpe import MR, UU
 from zhpe import zuuid, XDMcompletionError
 from tests import Tests
 
-class Queue():
-    def __init__(self, xdm, cmds):
-        self.xdm = xdm
-        self.cmds = cmds
-        self.cmps = cmds
-        self.start = 0
-
 def runtime_err(*arg):
     raise RuntimeError(*arg)
 # Think about something like this, perhaps.
@@ -70,8 +63,8 @@ def parse_args():
                         help='the zhpe character device file')
     parser.add_argument('-k', '--keyboard', action='store_true',
                         help='invoke interactive keyboard')
-    parser.add_argument('-c', '--commands', default=4096, type=int,
-                        help='total number of commands')
+#    parser.add_argument('-c', '--commands', default=1, type=int,
+#                        help='total number of commands')
     parser.add_argument('-f', '--fence', action='store_true',
                         help='fence every comand')
     parser.add_argument('-l', '--len', default=1024, type=int,
@@ -86,8 +79,6 @@ def parse_args():
                         help='slice 0-3')
     parser.add_argument('-v', '--verbosity', action='count', default=0,
                         help='increase output verbosity')
-    parser.add_argument('-w', '--window', default=0, type=int,
-                        help='window, defaults to queue size - 1')
     parser.add_argument('-x', '--xdmq_size', default=1024, type=int,
                         help='size of XDM queue. must be power of 2')
     return parser.parse_args()
@@ -119,16 +110,6 @@ def main():
         if (args.xdmq_size & (args.xdmq_size - 1)) != 0:
             raise_err('-x option must specify a power of 2')
 
-        qmask = args.xdmq_size - 1
-
-        if args.window == 0:
-            args.window = qmask
-        if args.window >= args.xdmq_size:
-            raise_err('-w option must be <= queue size')
-            
-        if args.keyboard:
-            set_trace()
-
         queues = []
         smask = 1 << args.slice
         smask |= 0x80
@@ -137,7 +118,7 @@ def main():
                            slice_mask=smask)
             print('XDM queue = {} slice = {}'.format(
                 xdm.rsp_xqa.info.queue, xdm.rsp_xqa.info.slice))
-            queues.append(Queue(xdm, args.commands))
+            queues.append(xdm)
 
         cmd = zhpe.xdm_cmd()
 
@@ -162,29 +143,15 @@ def main():
             cmd.getput.read_addr = rsp_rmr.req_addr
             cmd.getput.write_addr = v + args.len
 
-        # Fill the queue with the commands
-        for i in range(args.xdmq_size):
-            for q in queues:
-                q.xdm.queue_cmd(cmd, False)
-
         if args.keyboard:
             set_trace()
 
-        working = queues.copy()
-        while working:
-            for q in working:
-                qtail = q.xdm.qcm.cmpl_q_tail_idx & qmask
-                qdone = (qtail - q.xdm.cmpl_q_tail_shadow) & qmask
-                q.xdm.cmpl_q_tail_shadow = qtail
-                q.cmps -= qdone;
-                if q.cmps == 0:
-                    working.remove(q)
-                qavail = qmask - (q.cmps - q.cmds)
-                qavail = min(qavail, q.cmds, args.window)
-                if qavail == args.window or qavail == q.cmds:
-                    q.xdm.ring2(qavail)
-                    q.cmds -= qavail
-
+        for q in queues:
+            q.queue_cmd(cmd)
+            cmpl = q.get_cmpl()
+            if args.verbosity:
+                print('cmpl: {}'.format(cmpl))
+            
         if args.keyboard:
             set_trace()
 
