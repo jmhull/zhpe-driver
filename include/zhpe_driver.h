@@ -359,6 +359,7 @@ struct slice {
     spinlock_t          zmmu_lock;   /* per-slice zmmu lock */
     bool                valid;       /* slice is fully initialized */
     unsigned int        id;          /* zero based, unique slice id */
+    unsigned int        pid;         /* zero based, unique physical slice id */
     struct pci_dev	*pdev;
     /* Revisit: add s_link boolean */
     spinlock_t           xdm_slice_lock; /* locks alloc_count, alloced_bitmap */
