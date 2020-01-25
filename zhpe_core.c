@@ -156,11 +156,14 @@ MODULE_PARM_DESC(genz_loopback, "Gen-Z loopback mode (default=1)");
 
 static char *req_page_grid = "default";
 module_param(req_page_grid, charp, 0444);
-MODULE_PARM_DESC(req_page_grid, "requester page grid allocations - page_sz{*:}page_cnt[, ...]");
+MODULE_PARM_DESC(req_page_grid,
+                 "requester page grid allocations - page_sz{*:}page_cnt[, ...]"
+    );
 
 static char *rsp_page_grid = "default";
 module_param(rsp_page_grid, charp, 0444);
-MODULE_PARM_DESC(rsp_page_grid, "responder page grid allocations - page_sz:page_cnt[, ...]");
+MODULE_PARM_DESC(rsp_page_grid,
+                 "responder page grid allocations - page_sz:page_cnt[, ...]");
 
 uint zhpe_debug_flags;
 
@@ -419,12 +422,12 @@ void _zpages_free(const char *callf, uint line, union zpages *zpages)
  * HSR registers. This is used to map the QCM application data for queues.
  * The space for the HSRs is already allocated and mapped by the pci probe
  * function.
- * 	base_addr - pointer to the start of the QCM app first 64 bytes
+ *      base_addr - pointer to the start of the QCM app first 64 bytes
  */
 union zpages *_hsr_zpage_alloc(
-	const char  *callf,
-	uint        line,
-	phys_addr_t base_addr)
+        const char  *callf,
+        uint        line,
+        phys_addr_t base_addr)
 {
     union zpages       *ret = NULL;
 
@@ -449,13 +452,13 @@ union zpages *_hsr_zpage_alloc(
  * dma_zpages_alloc - allocate a zpages structure that can be used for the
  * contiguous physical address space for queues. It uses dma_alloc_coherent()
  * to allocate the space.
- *	sl - slice structure for the pci_dev->device.
-	size - size in bytes to be allocated for the dma
+ *      sl - slice structure for the pci_dev->device.
+        size - size in bytes to be allocated for the dma
  */
 union zpages *_dma_zpages_alloc(
-	const char *callf, uint line,
-	struct slice * sl,
-	size_t size)
+        const char *callf, uint line,
+        struct slice * sl,
+        size_t size)
 {
     union zpages       *ret = NULL;
     int                 order = 0;
@@ -472,8 +475,12 @@ union zpages *_dma_zpages_alloc(
         goto done;
 
     ret->dma.cpu_addr = dma_alloc_coherent(&sl->pdev->dev, npages * PAGE_SIZE,
-			&ret->dma.dma_addr, GFP_KERNEL);
-    debug(DEBUG_MEM, "dma_alloc_coherent(size = %u, pa returned = 0x%llu, va returned = 0x%px\n", (unsigned int)(npages * PAGE_SIZE), ret->dma.dma_addr, ret->dma.cpu_addr);
+                        &ret->dma.dma_addr, GFP_KERNEL);
+    debug(DEBUG_MEM,
+          "dma_alloc_coherent(size = %u, pa returned = 0x%llu,"
+          " va returned = 0x%px\n",
+          (unsigned int)(npages * PAGE_SIZE), ret->dma.dma_addr,
+          ret->dma.cpu_addr);
     /* RAM memory will always be WB unless you set the memory type. */
     ret->dma.page_type = DMA_PAGE;
     ret->dma.size = size;
@@ -495,7 +502,7 @@ union zpages *_dma_zpages_alloc(
  */
 
 union zpages *shared_zpage_alloc(
-	size_t size, int type)
+        size_t size, int type)
 {
     union zpages       *ret = NULL;
 
@@ -514,9 +521,9 @@ union zpages *shared_zpage_alloc(
  * simple kmalloced queues for early testing without hardware.
  */
 union zpages *_queue_zpages_alloc(
-	const char *callf, uint line, 
-	size_t size,
-	bool contig)
+        const char *callf, uint line,
+        size_t size,
+        bool contig)
 {
     union zpages       *ret = NULL;
     int                 order = 0;
@@ -545,23 +552,23 @@ union zpages *_queue_zpages_alloc(
     ret->queue.size = size;
     ret->queue.page_type = QUEUE_PAGE;
     if (contig) {
-	ret->queue.pages[0] = _do__get_free_pages(callf, line,
+        ret->queue.pages[0] = _do__get_free_pages(callf, line,
                                            order, GFP_KERNEL | __GFP_ZERO,
                                            true);
-	i = 1;
-	if (ret->queue.pages[0]) {
-		split_page(virt_to_page(ret->queue.pages[0]), order);
-		for (; i < npages; i++)
-			ret->queue.pages[i] = ret->queue.pages[i - 1] + PAGE_SIZE;
-	}
+        i = 1;
+        if (ret->queue.pages[0]) {
+                split_page(virt_to_page(ret->queue.pages[0]), order);
+                for (; i < npages; i++)
+                    ret->queue.pages[i] = ret->queue.pages[i - 1] + PAGE_SIZE;
+        }
     } else {
-	for (i = 0; i < npages; i++) {
-		ret->queue.pages[i] = _do__get_free_pages(callf, line,
+        for (i = 0; i < npages; i++) {
+                ret->queue.pages[i] = _do__get_free_pages(callf, line,
                                                0, GFP_KERNEL | __GFP_ZERO,
                                                true);
-		if (!ret->queue.pages[i])
-			break;
-	}
+                if (!ret->queue.pages[i])
+                        break;
+        }
     }
     if (!ret->queue.pages[i-1]) {
         for (i = 0; i < npages; i++)
@@ -579,7 +586,7 @@ union zpages *_queue_zpages_alloc(
 /*
  * rmr_zpages_alloc - allocate a zpages structure for a cpu-visible RMR_IMPORT.
  * This is used to map the requester ZMMU PTE.
- * 	rmr - pointer to the corresponding rmr structure
+ *      rmr - pointer to the corresponding rmr structure
  */
 union zpages *_rmr_zpages_alloc(const char *callf, uint line,
                                 struct zhpe_rmr *rmr)
@@ -638,10 +645,10 @@ void _zmap_fdata_free(const char *callf, uint line, struct file_data *fdata,
 }
 
 struct zmap *_zmap_alloc(
-	const char *callf,
-	uint line,
-	struct file_data *fdata,
-	union zpages *zpages)
+        const char *callf,
+        uint line,
+        struct file_data *fdata,
+        union zpages *zpages)
 {
     struct zmap         *ret;
     struct zmap         *cur;
@@ -809,77 +816,77 @@ int queue_io_rsp(struct io_entry *entry, size_t data_len, int status)
 
 static int parse_platform(char *str)
 {
-	struct pci_dev		*pdev = NULL;
-	uint			slices_seen = 0;
+    struct pci_dev          *pdev = NULL;
+    uint                    slices_seen = 0;
 
-	if (!str)
-		return -EINVAL;
+    if (!str)
+        return -EINVAL;
 
-	while ((pdev = pci_get_device(PCI_VENDOR_ID_HP_3PAR, 0x0290, pdev)))
-		slices_seen++;
-	zprintk(KERN_INFO, "%u slices seen\n", slices_seen);
+    while ((pdev = pci_get_device(PCI_VENDOR_ID_HP_3PAR, 0x0290, pdev)))
+        slices_seen++;
+    zprintk(KERN_INFO, "%u slices seen\n", slices_seen);
 
-	if (strcmp(str, "pfslice") == 0) {
-                debug(DEBUG_PCI, "parse platform pfslice\n");
-		zhpe_platform = ZHPE_PFSLICE;
-                zhpe_bridge.expected_slices = 1;
-		zhpe_req_zmmu_entries = PFSLICE_REQ_ZMMU_ENTRIES;
-		zhpe_rsp_zmmu_entries = PFSLICE_RSP_ZMMU_ENTRIES;
-		zhpe_xdm_queues_per_slice = PFSLICE_XDM_QUEUES_PER_SLICE;
-		zhpe_rdm_queues_per_slice = PFSLICE_RDM_QUEUES_PER_SLICE;
-                zhpe_reqz_min_cpuvisible_addr =
-                    PFSLICE_REQZ_MIN_CPUVISIBLE_ADDR;
-                zhpe_reqz_max_cpuvisible_addr =
-                    PFSLICE_REQZ_MAX_CPUVISIBLE_ADDR;
-		if (strcmp(req_page_grid, "default") == 0)
-			req_page_grid =
-                            "1G*800,1G:16,128T:128";
-		if (strcmp(rsp_page_grid, "default") == 0)
-			rsp_page_grid = "1G:896,128T:128";
-		zhpe_no_avx = 0;
-        } else if (strcmp(str, "wildcat") == 0) {
-                debug(DEBUG_PCI, "parse platform wildcat\n");
-  		zhpe_platform = ZHPE_WILDCAT;
-		zhpe_bridge.expected_slices = SLICES;
-		if (slices_seen < zhpe_bridge.expected_slices)
-			zhpe_bridge.expected_slices = slices_seen;
-		zhpe_req_zmmu_entries = WILDCAT_REQ_ZMMU_ENTRIES;
-		zhpe_rsp_zmmu_entries = WILDCAT_RSP_ZMMU_ENTRIES;
-		zhpe_xdm_queues_per_slice = WILDCAT_XDM_QUEUES_PER_SLICE;
-		zhpe_rdm_queues_per_slice = WILDCAT_RDM_QUEUES_PER_SLICE;
-                zhpe_reqz_min_cpuvisible_addr =
-                    WILDCAT_REQZ_MIN_CPUVISIBLE_ADDR;
-                zhpe_reqz_max_cpuvisible_addr =
-                    WILDCAT_REQZ_MAX_CPUVISIBLE_ADDR;
-		if (strcmp(req_page_grid, "default") == 0)
-			req_page_grid = "1G*104K,1G:8K,128T:16K";
-		if (strcmp(rsp_page_grid, "default") == 0)
-			rsp_page_grid = "128T:1K,1G:63K";
-		zhpe_no_avx = 0;
-        } else if (strcmp(str, "carbon") == 0) {
-                debug(DEBUG_PCI, "parse platform carbon\n");
-		zhpe_platform = ZHPE_CARBON;
-                zhpe_bridge.expected_slices = SLICES;
-		zhpe_req_zmmu_entries = CARBON_REQ_ZMMU_ENTRIES;
-		zhpe_rsp_zmmu_entries = CARBON_RSP_ZMMU_ENTRIES;
-		zhpe_xdm_queues_per_slice = CARBON_XDM_QUEUES_PER_SLICE;
-		zhpe_rdm_queues_per_slice = CARBON_RDM_QUEUES_PER_SLICE;
-                zhpe_reqz_min_cpuvisible_addr =
-                    CARBON_REQZ_MIN_CPUVISIBLE_ADDR;
-                zhpe_reqz_max_cpuvisible_addr =
-                    CARBON_REQZ_MAX_CPUVISIBLE_ADDR;
-                zhpe_reqz_phy_cpuvisible_off =
-                    CARBON_REQZ_PHY_CPUVISIBLE_OFF;
-		if (strcmp(req_page_grid, "default") == 0)
-			req_page_grid = "1G*104K,1G:8K,128T:16K";
-		if (strcmp(rsp_page_grid, "default") == 0)
-			rsp_page_grid = "128T:1K,1G:63K";
-		zhpe_no_avx = 1;
-        } else {
-		return -EINVAL;
-	}
+    if (strcmp(str, "pfslice") == 0) {
+        debug(DEBUG_PCI, "parse platform pfslice\n");
+        zhpe_platform = ZHPE_PFSLICE;
+        zhpe_bridge.expected_slices = 1;
+        zhpe_req_zmmu_entries = PFSLICE_REQ_ZMMU_ENTRIES;
+        zhpe_rsp_zmmu_entries = PFSLICE_RSP_ZMMU_ENTRIES;
+        zhpe_xdm_queues_per_slice = PFSLICE_XDM_QUEUES_PER_SLICE;
+        zhpe_rdm_queues_per_slice = PFSLICE_RDM_QUEUES_PER_SLICE;
+        zhpe_reqz_min_cpuvisible_addr =
+            PFSLICE_REQZ_MIN_CPUVISIBLE_ADDR;
+        zhpe_reqz_max_cpuvisible_addr =
+            PFSLICE_REQZ_MAX_CPUVISIBLE_ADDR;
+        if (strcmp(req_page_grid, "default") == 0)
+            req_page_grid =
+                "1G*800,1G:16,128T:128";
+        if (strcmp(rsp_page_grid, "default") == 0)
+            rsp_page_grid = "1G:896,128T:128";
+        zhpe_no_avx = 0;
+    } else if (strcmp(str, "wildcat") == 0) {
+        debug(DEBUG_PCI, "parse platform wildcat\n");
+        zhpe_platform = ZHPE_WILDCAT;
+        zhpe_bridge.expected_slices = SLICES;
+        if (slices_seen < zhpe_bridge.expected_slices)
+            zhpe_bridge.expected_slices = slices_seen;
+        zhpe_req_zmmu_entries = WILDCAT_REQ_ZMMU_ENTRIES;
+        zhpe_rsp_zmmu_entries = WILDCAT_RSP_ZMMU_ENTRIES;
+        zhpe_xdm_queues_per_slice = WILDCAT_XDM_QUEUES_PER_SLICE;
+        zhpe_rdm_queues_per_slice = WILDCAT_RDM_QUEUES_PER_SLICE;
+        zhpe_reqz_min_cpuvisible_addr =
+            WILDCAT_REQZ_MIN_CPUVISIBLE_ADDR;
+        zhpe_reqz_max_cpuvisible_addr =
+            WILDCAT_REQZ_MAX_CPUVISIBLE_ADDR;
+        if (strcmp(req_page_grid, "default") == 0)
+            req_page_grid = "1G*104K,1G:8K,128T:16K";
+        if (strcmp(rsp_page_grid, "default") == 0)
+            rsp_page_grid = "128T:1K,1G:63K";
+        zhpe_no_avx = 0;
+    } else if (strcmp(str, "carbon") == 0) {
+        debug(DEBUG_PCI, "parse platform carbon\n");
+        zhpe_platform = ZHPE_CARBON;
+        zhpe_bridge.expected_slices = SLICES;
+        zhpe_req_zmmu_entries = CARBON_REQ_ZMMU_ENTRIES;
+        zhpe_rsp_zmmu_entries = CARBON_RSP_ZMMU_ENTRIES;
+        zhpe_xdm_queues_per_slice = CARBON_XDM_QUEUES_PER_SLICE;
+        zhpe_rdm_queues_per_slice = CARBON_RDM_QUEUES_PER_SLICE;
+        zhpe_reqz_min_cpuvisible_addr =
+            CARBON_REQZ_MIN_CPUVISIBLE_ADDR;
+        zhpe_reqz_max_cpuvisible_addr =
+            CARBON_REQZ_MAX_CPUVISIBLE_ADDR;
+        zhpe_reqz_phy_cpuvisible_off =
+            CARBON_REQZ_PHY_CPUVISIBLE_OFF;
+        if (strcmp(req_page_grid, "default") == 0)
+            req_page_grid = "1G*104K,1G:8K,128T:16K";
+        if (strcmp(rsp_page_grid, "default") == 0)
+            rsp_page_grid = "128T:1K,1G:63K";
+        zhpe_no_avx = 1;
+    } else {
+        return -EINVAL;
+    }
 
-	return 0;
+    return 0;
 }
 
 static int parse_page_grid_one(char *str, uint64_t max_page_count,
@@ -1053,7 +1060,9 @@ static int zhpe_bind_iommu(struct file_data *fdata)
             pdev = fdata->bridge->slice[s].pdev;
             ret = amd_iommu_bind_pasid(pdev, fdata->pasid, current);
             if (ret < 0) {
-                debug(DEBUG_IO, "amd_iommu_bind_pasid failed for slice %d with return %d\n", s, ret);
+                debug(DEBUG_IO,
+                      "amd_iommu_bind_pasid failed for slice %d with"
+                      " return %d\n", s, ret);
             }
             amd_iommu_set_invalid_ppr_cb(pdev, iommu_invalid_ppr_cb);
         }
@@ -1132,7 +1141,8 @@ static ssize_t zhpe_read(struct file *file, char __user *buf, size_t len,
                 list_del_init(&entry->list);
                 len = entry->data_len;
             } else {
-                debug(DEBUG_IO, "zhpe_read: len %ld entry->data_len %ld\n", len, entry->data_len);
+                debug(DEBUG_IO, "zhpe_read: len %ld entry->data_len %ld\n",
+                      len, entry->data_len);
                 ret = -EINVAL;
             }
         }
@@ -1277,22 +1287,22 @@ static inline int zhpe_vma_wants_writenotify(struct vm_area_struct *vma,
 /* identical to vm_pgprot_modify, except for function name */
 static pgprot_t zhpe_pgprot_modify(pgprot_t oldprot, unsigned long vm_flags)
 {
-        return pgprot_modify(oldprot, vm_get_page_prot(vm_flags));
+    return pgprot_modify(oldprot, vm_get_page_prot(vm_flags));
 }
 
 /* identical to vma_set_page_prot, except for function name */
 void zhpe_vma_set_page_prot(struct vm_area_struct *vma)
 {
-        unsigned long vm_flags = vma->vm_flags;
-        pgprot_t vm_page_prot;
+    unsigned long vm_flags = vma->vm_flags;
+    pgprot_t vm_page_prot;
 
-        vm_page_prot = vm_pgprot_modify(vma->vm_page_prot, vm_flags);
-        if (vma_wants_writenotify(vma, vm_page_prot)) {
-                vm_flags &= ~VM_SHARED;
-                vm_page_prot = vm_pgprot_modify(vm_page_prot, vm_flags);
-        }
-        /* remove_protection_ptes reads vma->vm_page_prot without mmap_sem */
-        WRITE_ONCE(vma->vm_page_prot, vm_page_prot);
+    vm_page_prot = vm_pgprot_modify(vma->vm_page_prot, vm_flags);
+    if (vma_wants_writenotify(vma, vm_page_prot)) {
+        vm_flags &= ~VM_SHARED;
+        vm_page_prot = vm_pgprot_modify(vm_page_prot, vm_flags);
+    }
+    /* remove_protection_ptes reads vma->vm_page_prot without mmap_sem */
+    WRITE_ONCE(vma->vm_page_prot, vm_page_prot);
 }
 
 static int zhpe_vm_access(struct vm_area_struct *vma, unsigned long addr,
@@ -1501,9 +1511,9 @@ static int alloc_map_shared_data(struct file_data *fdata)
     }
     /* Initialize the counters to 0 */
     local_shared_data = (struct zhpe_local_shared_data *)
-			fdata->local_shared_zpage->queue.pages[0];
+                        fdata->local_shared_zpage->queue.pages[0];
     for (i = 0; i < MAX_IRQ_VECTORS; i++)
-	local_shared_data->handled_counter[i] = 0;
+        local_shared_data->handled_counter[i] = 0;
 
     fdata->local_shared_zmap->owner = NULL;
     smp_wmb();
@@ -1556,19 +1566,19 @@ static int zhpe_open(struct inode *inode, struct file *file)
     mutex_lock(&br->probe_mutex);
     if (br->num_slices != br->expected_slices) {
         ret = -ENODEV;
-	printk_once(KERN_ERR "%s,%s:num_slices (%u) != expected_slices (%u)\n",
-		    zhpe_driver_name, __func__, br->num_slices,
-		    br->expected_slices);
+        printk_once(KERN_ERR "%s,%s:num_slices (%u) != expected_slices (%u)\n",
+                    zhpe_driver_name, __func__, br->num_slices,
+                    br->expected_slices);
     }
     if (!SLICE_VALID(&br->slice[0])) {
         ret = -ENODEV;
-	printk_once(KERN_ERR "%s,%s:slice zero must be valid\n",
-		    zhpe_driver_name, __func__);
+        printk_once(KERN_ERR "%s,%s:slice zero must be valid\n",
+                    zhpe_driver_name, __func__);
     }
     if (br->probe_error < 0) {
         ret = -ENODEV;
-	printk_once(KERN_ERR "%s,%s:error during probe\n",
-		    zhpe_driver_name, __func__);
+        printk_once(KERN_ERR "%s,%s:error during probe\n",
+                    zhpe_driver_name, __func__);
     }
     mutex_unlock(&br->probe_mutex);
     if (ret < 0)
@@ -1948,7 +1958,7 @@ static int zhpe_probe(struct pci_dev *pdev,
     mutex_lock(&br->probe_mutex);
 
     if (br->num_slices > SLICES)
-	    goto err_out;
+            goto err_out;
 
     if (zhpe_platform != ZHPE_CARBON) {
         /* Set atomic operations enable capability */
@@ -2094,16 +2104,16 @@ static int zhpe_probe(struct pci_dev *pdev,
 
     zhpe_xqueue_init(sl);
     if (zhpe_clear_xdm_qcm(sl->bar->xdm)) {
-	debug(DEBUG_PCI, "zhpe_clear_xdm_qcm failed\n");
-	ret = -EIO;
-	goto err_pci_iounmap;
+        debug(DEBUG_PCI, "zhpe_clear_xdm_qcm failed\n");
+        ret = -EIO;
+        goto err_pci_iounmap;
     }
 
     zhpe_rqueue_init(sl);
     if (zhpe_clear_rdm_qcm(sl->bar->rdm)) {
-	debug(DEBUG_PCI, "zhpe_clear_rdm_qcm failed\n");
-	ret = -EIO;
-	goto err_pci_iounmap;
+        debug(DEBUG_PCI, "zhpe_clear_rdm_qcm failed\n");
+        ret = -EIO;
+        goto err_pci_iounmap;
     }
 
     if (zhpe_platform != ZHPE_CARBON) {
@@ -2295,7 +2305,7 @@ static int __init zhpe_init(void)
     }
     global_shared_data = global_shared_zpage->queue.pages[0];
     for (i = 0; i < MAX_IRQ_VECTORS; i++)
-	global_shared_data->triggered_counter[i] = 0;
+        global_shared_data->triggered_counter[i] = 0;
 
     spin_lock_init(&zhpe_bridge.zmmu_lock);
     for (sl = 0; sl < SLICES; sl++) {
