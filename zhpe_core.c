@@ -86,8 +86,6 @@ const char zhpe_driver_name[] = DRIVER_NAME;
 
 static atomic64_t mem_total = ATOMIC64_INIT(0);
 
-static atomic_t slice_id = ATOMIC_INIT(0);
-
 static union zpages            *global_shared_zpage;
 struct zhpe_global_shared_data *global_shared_data;
 
@@ -115,7 +113,9 @@ uint64_t zhpe_reqz_phy_cpuvisible_off;
 int zhpe_platform = ZHPE_CARBON;
 static char *platform = "carbon";
 module_param(platform, charp, 0444);
-MODULE_PARM_DESC(platform, "Platform the driver is running on: carbon|pfslice|wildcat (default=carbon)");
+MODULE_PARM_DESC(platform,
+                 "Platform the driver is running on: carbon|pfslice|wildcat"
+                 " (default=carbon)");
 
 uint zhpe_no_rkeys = 1;
 module_param_named(no_rkeys, zhpe_no_rkeys, uint, S_IRUGO);
@@ -146,7 +146,7 @@ MODULE_PARM_DESC(no_iommu, "System does not have an IOMMU (default=0)");
 /* Revisit Carbon: Gen-Z Global CID should come from bridge Core
  * Structure, but for now, it's a module parameter
  */
-uint genz_gcid = INVALID_GCID;
+static uint genz_gcid = INVALID_GCID;
 module_param(genz_gcid, uint, S_IRUGO);
 MODULE_PARM_DESC(genz_gcid, "Gen-Z bridge global CID");
 
@@ -809,11 +809,14 @@ int queue_io_rsp(struct io_entry *entry, size_t data_len, int status)
 
 static int parse_platform(char *str)
 {
+	struct pci_dev		*pdev;
+
 	if (!str)
 		return -EINVAL;
 	if (strcmp(str, "pfslice") == 0) {
                 debug(DEBUG_PCI, "parse platform pfslice\n");
 		zhpe_platform = ZHPE_PFSLICE;
+                zhpe_bridge.expected_slices = 1;
 		zhpe_req_zmmu_entries = PFSLICE_REQ_ZMMU_ENTRIES;
 		zhpe_rsp_zmmu_entries = PFSLICE_RSP_ZMMU_ENTRIES;
 		zhpe_xdm_queues_per_slice = PFSLICE_XDM_QUEUES_PER_SLICE;
@@ -831,6 +834,13 @@ static int parse_platform(char *str)
         } else if (strcmp(str, "wildcat") == 0) {
                 debug(DEBUG_PCI, "parse platform wildcat\n");
 		zhpe_platform = ZHPE_WILDCAT;
+		pdev = NULL;
+		while (!(pdev = pci_get_device(PCI_VENDOR_ID_HP_3PAR, 0x0290,
+					       pdev)))
+			zhpe_bridge.expected_slices++;
+		if (zhpe_bridge.expected_slices != SLICES)
+			zprintk(KERN_WARNING, "%u slices seen\n",
+				zhpe_bridge.expected_slices);
 		zhpe_req_zmmu_entries = WILDCAT_REQ_ZMMU_ENTRIES;
 		zhpe_rsp_zmmu_entries = WILDCAT_RSP_ZMMU_ENTRIES;
 		zhpe_xdm_queues_per_slice = WILDCAT_XDM_QUEUES_PER_SLICE;
@@ -847,6 +857,7 @@ static int parse_platform(char *str)
         } else if (strcmp(str, "carbon") == 0) {
                 debug(DEBUG_PCI, "parse platform carbon\n");
 		zhpe_platform = ZHPE_CARBON;
+                zhpe_bridge.expected_slices = 1;
 		zhpe_req_zmmu_entries = CARBON_REQ_ZMMU_ENTRIES;
 		zhpe_rsp_zmmu_entries = CARBON_RSP_ZMMU_ENTRIES;
 		zhpe_xdm_queues_per_slice = CARBON_XDM_QUEUES_PER_SLICE;
@@ -958,8 +969,8 @@ static int zhpe_user_req_INIT(struct io_entry *entry)
 {
     union zhpe_rsp      *rsp = &entry->op.rsp;
     struct file_data    *fdata = entry->fdata;
+    struct bridge       *br = fdata->bridge;
     int                 status = 0;
-    uint32_t            num_slices = atomic_read(&fdata->bridge->num_slices);
     struct uuid_tracker *uu;
     uint32_t            ro_rkey;
     uint32_t            rw_rkey;
@@ -967,19 +978,19 @@ static int zhpe_user_req_INIT(struct io_entry *entry)
 
     rsp->init.magic = ZHPE_MAGIC;
 
-    rsp->init.attr.max_tx_queues = zhpe_xdm_queues_per_slice * num_slices;
-    rsp->init.attr.max_rx_queues = zhpe_rdm_queues_per_slice * num_slices;
+    rsp->init.attr.max_tx_queues = zhpe_xdm_queues_per_slice * br->num_slices;
+    rsp->init.attr.max_rx_queues = zhpe_rdm_queues_per_slice * br->num_slices;
     rsp->init.attr.max_tx_qlen = ZHPE_MAX_XDM_QLEN;
     rsp->init.attr.max_rx_qlen = ZHPE_MAX_RDM_QLEN;
     rsp->init.attr.max_dma_len = ZHPE_MAX_DMA_LEN;
-    rsp->init.attr.num_slices = num_slices;
+    rsp->init.attr.num_slices = br->num_slices;
 
     rsp->init.global_shared_offset = fdata->global_shared_zmap->offset;
     rsp->init.global_shared_size = fdata->global_shared_zmap->zpages->hdr.size;
     rsp->init.local_shared_offset = fdata->local_shared_zmap->offset;
     rsp->init.local_shared_size = fdata->local_shared_zmap->zpages->hdr.size;
 
-    zhpe_generate_uuid(fdata->bridge, &rsp->init.uuid);
+    zhpe_generate_uuid(br, &rsp->init.uuid);
     uu = zhpe_uuid_tracker_alloc_and_insert(&rsp->init.uuid, UUID_TYPE_LOCAL,
                                             0, fdata, GFP_KERNEL, &status);
     if (!uu)
@@ -1534,16 +1545,31 @@ struct file_data *pid_to_fdata(struct bridge *br, pid_t pid)
 
 static int zhpe_open(struct inode *inode, struct file *file)
 {
-    int                 ret = -ENODEV;
+    int                 ret = 0;
     struct file_data    *fdata = NULL;
+    struct bridge       *br = &zhpe_bridge;
     size_t              size;
 
-    /* update the actual number of slices in the zhpe_attr */
-    size = atomic_read(&zhpe_bridge.num_slices);
-    if (!size) {
-        debug(DEBUG_IO, "No device found\n");
-        goto done;
+    mutex_lock(&br->probe_mutex);
+    if (br->num_slices != br->expected_slices) {
+        ret = -ENODEV;
+	printk_once(KERN_ERR "%s,%s:num_slices (%u) != expected_slices (%u)\n",
+		    zhpe_driver_name, __func__, br->num_slices,
+		    br->expected_slices);
     }
+    if (!SLICE_VALID(&br->slice[0])) {
+        ret = -ENODEV;
+	printk_once(KERN_ERR "%s,%s:slice zero must be valid\n",
+		    zhpe_driver_name, __func__);
+    }
+    if (br->probe_error < 0) {
+        ret = -ENODEV;
+	printk_once(KERN_ERR "%s,%s:error during probe\n",
+		    zhpe_driver_name, __func__);
+    }
+    mutex_unlock(&br->probe_mutex);
+    if (ret < 0)
+        goto done;
 
     ret = -ENOMEM;
     size = sizeof(*fdata);
@@ -1668,9 +1694,6 @@ static int zhpe_open(struct inode *inode, struct file *file)
  */
 #define ZHPE_OZS_SID_CSR          (0xB8)
 #define ZHPE_OZS_CID_CSR          (0xC0)
-#define ZHPE_OZS_CID_CID0_VALID   (0x01)
-#define ZHPE_OZS_CID_SID_VALID    (0x80)
-#define ZHPE_OZS_CID_CID0_SHIFT   (0x08)
 
 /*
  * pfslice: LARK1.SLOT1.PFS0.SKWGPSHIMINBOUND0.SKW_SHIM_INB_CFG
@@ -1680,22 +1703,97 @@ static int zhpe_open(struct inode *inode, struct file *file)
  * slice 1: x = 0, y = 1
  * slice 2: x = 1, y = 0
  * slice 3: x = 1, y = 1
+ * At the moment, the rules for slices to register on slice seem to be:
+ * reg + ((pslice >> 1) + 1) * 0x800000 + (pslice & 1) * 0x1000
  */
-#define ZHPE_PFS_SHIM_INB_CFG_CSR (0x73a908)
-static uint32_t zhpe_skw_shim_inb_cfg_csrs[] = {
-    0x0fba908, 0x0fbb908,  0x17ba908, 0x17bb908,
+struct zhpe_csr {
+    uint32_t            pfs;
+    uint32_t            asic;
 };
 
-#define ZHPE_INB_CFG_MASK       (~(uint64_t)0xF)
-#define ZHPE_INB_CFG_SETTING    ((uint64_t)0x9)
+/* 16-bit SID at bit 0, if reg_24 SID_VALID flag set. */
+static struct zhpe_csr ozs_core_reg_23 = {
+    .pfs                = 0xB8U,
+    .asic               = 0xB8U,
+};
 
-static int csr_access(struct slice *sl, bool read, uint32_t csr, uint64_t *data)
+/* 12-bit CID at bit 8. CID0 should always be valid, but we'll check anyway.  */
+static struct zhpe_csr ozs_core_reg_24 = {
+    .pfs                = 0xC0U,
+    .asic               = 0xC0U,
+};
+
+#define ZHPE_OZS_CORE_REG_24_CID0_VALID   (0x01)
+#define ZHPE_OZS_CORE_REG_24_CID0_SHIFT   (0x08)
+#define ZHPE_OZS_CORE_REG_24_SID_VALID    (0x80)
+
+static struct zhpe_csr skw_shim_inb_cfg = {
+    .pfs                = 0x73A908U,
+    .asic               = 0x7BA908U,
+};
+
+static struct zhpe_csr xdm_err_all_status = {
+    .pfs                = 0x705088U,
+    .asic               = 0x730088U,
+};
+
+static struct zhpe_csr xdm_err_pri_status = {
+    .pfs                = 0x705080U,
+    .asic               = 0x730080U,
+};
+
+static struct zhpe_csr xdm_err_hwa_all_status = {
+    .pfs                = 0x705820U,
+    .asic               = 0x730820U,
+};
+
+static struct zhpe_csr xdm_err_hwa_pri_status = {
+    .pfs                = 0x705818U,
+    .asic               = 0x730818U,
+};
+
+static struct zhpe_csr xdm_err_hwe_all_status = {
+    .pfs                = 0x705808U,
+    .asic               = 0x730808U,
+};
+
+static struct zhpe_csr xdm_err_hwe_pri_status = {
+    .pfs                = 0x705800U,
+    .asic               = 0x730800U,
+};
+
+#define ZHPE_SKW_SHIM_INB_CFG_MASK      (~(uint64_t)0xF)
+#define ZHPE_SKW_SHIM_INB_CFG_SETTING   ((uint64_t)0x9)
+
+static uint32_t asic_slice_to_off(uint32_t pslice_id)
+{
+    return ((pslice_id >> 1) + 1) * 0x800000 + (pslice_id & 1) * 0x1000;
+}
+
+static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
+                      uint64_t *data)
 {
     int                 ret = -EIO;
     int                 pos;
     uint32_t            val;
     int                 i;
     uint32_t            cmd;
+    uint32_t            csr;
+
+    switch (zhpe_platform) {
+
+    case ZHPE_PFSLICE:
+        csr = zcsr->pfs;
+        break;
+
+    case ZHPE_WILDCAT:
+        csr = zcsr->asic + asic_slice_to_off(sl->pid);
+        break;
+
+    default:
+        return -EINVAL;
+
+    }
 
     pos = pci_find_ext_capability(sl->pdev, PCI_EXT_CAP_ID_DVSEC);
     if (!pos)
@@ -1737,8 +1835,8 @@ static int csr_access(struct slice *sl, bool read, uint32_t csr, uint64_t *data)
         }
         usleep_range(10, 20);
     }
-out:
 
+out:
     return ret;
 }
 
@@ -1749,59 +1847,80 @@ static int csr_get_gcid(struct bridge *br, struct slice *sl)
     uint64_t            cid;
 
     if (br->gcid != INVALID_GCID)
-        return 0;
-    mutex_lock(&br->csr_mutex);
-    if (br->gcid != INVALID_GCID)
         goto out;
-    ret = csr_access(sl, true, ZHPE_OZS_CID_CSR, &cid);
+    ret = csr_access(sl, true, &ozs_core_reg_24, &cid);
     if (ret < 0)
         goto out;
     debug(DEBUG_PCI, "CID register 0x%llx\n", cid);
-    if (!(cid & ZHPE_OZS_CID_CID0_VALID)) {
+    if (!(cid & ZHPE_OZS_CORE_REG_24_CID0_VALID)) {
         ret = -ENXIO;
         goto out;
     }
-    cid = (cid >> ZHPE_OZS_CID_CID0_SHIFT) & ZHPE_GCID_CID_MASK;
 
-    if (cid & ZHPE_OZS_CID_SID_VALID) {
-        ret = csr_access(sl, true, ZHPE_OZS_SID_CSR, &sid);
+    if (cid & ZHPE_OZS_CORE_REG_24_SID_VALID) {
+        ret = csr_access(sl, true, &ozs_core_reg_23, &sid);
         if (ret < 0)
             goto out;
         debug(DEBUG_PCI, "SID register 0x%llx\n", sid);
         sid = (sid & ZHPE_GCID_SID_MASK) << ZHPE_GCID_SID_SHIFT;
     }
 
+    cid = (cid >> ZHPE_OZS_CORE_REG_24_CID0_SHIFT) & ZHPE_GCID_CID_MASK;
     br->gcid = cid | sid;
 
 out:
-    mutex_unlock(&br->csr_mutex);
-
     return ret;
 }
 
 static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
 {
+    int                 ret;
+    uint64_t            cfg;
+
+    ret = csr_access(sl, true, &skw_shim_inb_cfg, &cfg);
+    if (ret < 0)
+        goto out;
+    debug(DEBUG_PCI, "SKW_SHIM_INB_CFG register 0x%llx\n", cfg);
+    cfg &= ZHPE_SKW_SHIM_INB_CFG_MASK;
+    cfg |= ZHPE_SKW_SHIM_INB_CFG_SETTING;
+    ret = csr_access(sl, false, &skw_shim_inb_cfg, &cfg);
+    if (ret < 0)
+        goto out;
+    ret = 0;
+
+ out:
+    return ret;
+}
+
+static int csr_reset_logs(struct bridge *br, struct slice *sl)
+{
     int                 ret = 0;
-    uint32_t            csr = ZHPE_PFS_SHIM_INB_CFG_CSR;
-    uint64_t            inb_cfg;
+    uint64_t            val;
 
-    if (zhpe_platform == ZHPE_WILDCAT)
-        csr = zhpe_skw_shim_inb_cfg_csrs[sl->pid];
-
-    mutex_lock(&br->csr_mutex);
-    ret = csr_access(sl, true, csr, &inb_cfg);
+    val = 1;
+    ret = csr_access(sl, true, &xdm_err_hwa_all_status, &val);
     if (ret < 0)
         goto out;
-    debug(DEBUG_PCI, "SKW_SHIM_INB_CFG register 0x%llx\n", inb_cfg);
-    inb_cfg &= ZHPE_INB_CFG_MASK;
-    inb_cfg |= ZHPE_INB_CFG_SETTING;
-    ret = csr_access(sl, false, csr, &inb_cfg);
+    ret = csr_access(sl, true, &xdm_err_hwa_pri_status, &val);
+    if (ret < 0)
+        goto out;
+    ret = csr_access(sl, true, &xdm_err_hwe_all_status, &val);
+    if (ret < 0)
+        goto out;
+    ret = csr_access(sl, true, &xdm_err_hwe_pri_status, &val);
     if (ret < 0)
         goto out;
 
-out:
-    mutex_unlock(&br->csr_mutex);
+    val = 0xc;
+    ret = csr_access(sl, true, &xdm_err_all_status, &val);
+    if (ret < 0)
+        goto out;
+    ret = csr_access(sl, true, &xdm_err_pri_status, &val);
+    if (ret < 0)
+        goto out;
+    ret = 0;
 
+ out:
     return ret;
 }
 
@@ -1811,7 +1930,6 @@ static int zhpe_probe(struct pci_dev *pdev,
     int ret, pos = 0;
     int vslice_id;
     int pslice_id;
-    int num_slice;
     void __iomem *base_addr;
     struct bridge *br = &zhpe_bridge;
     struct slice *sl = NULL;
@@ -1823,6 +1941,8 @@ static int zhpe_probe(struct pci_dev *pdev,
     if (PCI_FUNC(pdev->devfn) == 0) {
         return 0;
     }
+
+    mutex_lock(&br->probe_mutex);
 
     if (zhpe_platform != ZHPE_CARBON) {
         /* Set atomic operations enable capability */
@@ -1907,11 +2027,18 @@ static int zhpe_probe(struct pci_dev *pdev,
                                wr_pusher_ctl_28);
     } else {
         /* Carbon:zero based slice ID */
-        pslice_id = atomic_inc_return(&slice_id) - 1;
-        vslice_id =  pslice_id;
+        if (br->num_slices) {
+            dev_warn(&pdev->dev, "%s:%s,%u,%d:more than one device on Carbon\n",
+                     zhpe_driver_name, __func__, __LINE__,
+                     task_pid_nr(current));
+            ret = -ENODEV;
+            goto err_out;
+        }
+        pslice_id = br->num_slices;
+        vslice_id = pslice_id;
+        sl = &br->slice[vslice_id];
     }
-    sl = &br->slice[pslice_id];
-    num_slice = atomic_inc_return(&br->num_slices);
+    br->num_slices++;
 
     debug(DEBUG_PCI, "device = %s, slice = %u\n", pci_name(pdev), pslice_id);
 
@@ -1963,26 +2090,6 @@ static int zhpe_probe(struct pci_dev *pdev,
     sl->pdev = pdev;
     sl->valid = true;
 
-    if (zhpe_platform != ZHPE_CARBON) {
-        ret = csr_get_gcid(br, sl);
-        if (ret < 0)
-            goto err_pci_iounmap;
-        ret = csr_set_inb_cfg(br, sl);
-        if (ret < 0)
-            goto err_pci_iounmap;
-    } else if (genz_gcid == INVALID_GCID) {
-        dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
-        ret = -EINVAL;
-        goto err_pci_iounmap;
-    } else
-        br->gcid = genz_gcid;
-
-    if (num_slice == 1)
-        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = %d\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
-                 br->gcid);
-
     zhpe_zmmu_clear_slice(sl);
     zhpe_zmmu_setup_slice(sl);
 
@@ -1999,6 +2106,29 @@ static int zhpe_probe(struct pci_dev *pdev,
 	ret = -EIO;
 	goto err_pci_iounmap;
     }
+
+    if (zhpe_platform != ZHPE_CARBON) {
+        ret = csr_get_gcid(br, sl);
+        if (ret < 0)
+            goto err_pci_iounmap;
+        ret = csr_set_inb_cfg(br, sl);
+        if (ret < 0)
+            goto err_pci_iounmap;
+        ret = csr_reset_logs(br, sl);
+        if (ret < 0)
+            goto err_pci_iounmap;
+    } else if (genz_gcid == INVALID_GCID) {
+        dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
+                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
+        ret = -EINVAL;
+        goto err_pci_iounmap;
+    } else
+        br->gcid = genz_gcid;
+
+    if (br->num_slices == 1)
+        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = %d\n",
+                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
+                 br->gcid);
 
     pci_set_drvdata(pdev, sl);
 
@@ -2028,6 +2158,9 @@ static int zhpe_probe(struct pci_dev *pdev,
     }
     pci_set_master(pdev);
     dev_info(&pdev->dev, "%s:%s:successful\n", zhpe_driver_name, __func__);
+
+    mutex_unlock(&br->probe_mutex);
+
     return 0;
 
  err_free_interrupts:
@@ -2051,6 +2184,11 @@ static int zhpe_probe(struct pci_dev *pdev,
     sl->valid = false;
 
  err_out:
+    if (br->probe_error >= 0)
+        br->probe_error = ret;
+
+    mutex_unlock(&br->probe_mutex);
+
     return ret;
 }
 
@@ -2160,12 +2298,11 @@ static int __init zhpe_init(void)
     for (i = 0; i < MAX_IRQ_VECTORS; i++)
 	global_shared_data->triggered_counter[i] = 0;
 
-    atomic_set(&zhpe_bridge.num_slices, 0);
     spin_lock_init(&zhpe_bridge.zmmu_lock);
     for (sl = 0; sl < SLICES; sl++) {
         spin_lock_init(&zhpe_bridge.slice[sl].zmmu_lock);
     }
-    mutex_init(&zhpe_bridge.csr_mutex);
+    mutex_init(&zhpe_bridge.probe_mutex);
     spin_lock_init(&zhpe_bridge.fdata_lock);
     INIT_LIST_HEAD(&zhpe_bridge.fdata_list);
     zhpe_bridge.gcid = INVALID_GCID;

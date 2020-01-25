@@ -410,15 +410,17 @@ struct rdm_info {
 };
 
 struct bridge {
+    int                   probe_error;
     uint32_t              gcid;
-    atomic_t              num_slices;
+    uint32_t              expected_slices;
+    uint32_t              num_slices;
     struct slice          slice[SLICES];
     spinlock_t            zmmu_lock;  /* global bridge zmmu lock */
     struct page_grid_info req_zmmu_pg;
     struct page_grid_info rsp_zmmu_pg;
     struct xdm_info       msg_xdm;
     struct rdm_info       msg_rdm;
-    struct mutex          csr_mutex;   /* protect CSR mailbox */
+    struct mutex          probe_mutex; /* one probe at a time; also CSRs */
     spinlock_t            fdata_lock;  /* protects fdata_list */
     struct list_head      fdata_list;
     struct work_struct    msg_work;
@@ -536,7 +538,6 @@ enum {
 
 /* Globals */
 extern struct bridge    zhpe_bridge;
-extern uint genz_gcid;
 extern uint genz_loopback;
 
 #define CHECK_INIT_STATE(_entry, _ret, _label)              \
