@@ -809,10 +809,16 @@ int queue_io_rsp(struct io_entry *entry, size_t data_len, int status)
 
 static int parse_platform(char *str)
 {
-	struct pci_dev		*pdev;
+	struct pci_dev		*pdev = NULL;
+	uint			slices_seen = 0;
 
 	if (!str)
 		return -EINVAL;
+
+	while ((pdev = pci_get_device(PCI_VENDOR_ID_HP_3PAR, 0x0290, pdev)))
+		slices_seen++;
+	zprintk(KERN_INFO, "%u slices seen\n", slices_seen);
+
 	if (strcmp(str, "pfslice") == 0) {
                 debug(DEBUG_PCI, "parse platform pfslice\n");
 		zhpe_platform = ZHPE_PFSLICE;
@@ -833,14 +839,10 @@ static int parse_platform(char *str)
 		zhpe_no_avx = 0;
         } else if (strcmp(str, "wildcat") == 0) {
                 debug(DEBUG_PCI, "parse platform wildcat\n");
-		zhpe_platform = ZHPE_WILDCAT;
-		pdev = NULL;
-		while (!(pdev = pci_get_device(PCI_VENDOR_ID_HP_3PAR, 0x0290,
-					       pdev)))
-			zhpe_bridge.expected_slices++;
-		if (zhpe_bridge.expected_slices != SLICES)
-			zprintk(KERN_WARNING, "%u slices seen\n",
-				zhpe_bridge.expected_slices);
+  		zhpe_platform = ZHPE_WILDCAT;
+		zhpe_bridge.expected_slices = SLICES;
+		if (slices_seen < zhpe_bridge.expected_slices)
+			zhpe_bridge.expected_slices = slices_seen;
 		zhpe_req_zmmu_entries = WILDCAT_REQ_ZMMU_ENTRIES;
 		zhpe_rsp_zmmu_entries = WILDCAT_RSP_ZMMU_ENTRIES;
 		zhpe_xdm_queues_per_slice = WILDCAT_XDM_QUEUES_PER_SLICE;
@@ -857,7 +859,7 @@ static int parse_platform(char *str)
         } else if (strcmp(str, "carbon") == 0) {
                 debug(DEBUG_PCI, "parse platform carbon\n");
 		zhpe_platform = ZHPE_CARBON;
-                zhpe_bridge.expected_slices = 1;
+                zhpe_bridge.expected_slices = SLICES;
 		zhpe_req_zmmu_entries = CARBON_REQ_ZMMU_ENTRIES;
 		zhpe_rsp_zmmu_entries = CARBON_RSP_ZMMU_ENTRIES;
 		zhpe_xdm_queues_per_slice = CARBON_XDM_QUEUES_PER_SLICE;
@@ -876,6 +878,7 @@ static int parse_platform(char *str)
         } else {
 		return -EINVAL;
 	}
+
 	return 0;
 }
 
@@ -1944,6 +1947,9 @@ static int zhpe_probe(struct pci_dev *pdev,
 
     mutex_lock(&br->probe_mutex);
 
+    if (br->num_slices > SLICES)
+	    goto err_out;
+
     if (zhpe_platform != ZHPE_CARBON) {
         /* Set atomic operations enable capability */
         pcie_capability_set_word(pdev, PCI_EXP_DEVCTL2,
@@ -2027,13 +2033,6 @@ static int zhpe_probe(struct pci_dev *pdev,
                                wr_pusher_ctl_28);
     } else {
         /* Carbon:zero based slice ID */
-        if (br->num_slices) {
-            dev_warn(&pdev->dev, "%s:%s,%u,%d:more than one device on Carbon\n",
-                     zhpe_driver_name, __func__, __LINE__,
-                     task_pid_nr(current));
-            ret = -ENODEV;
-            goto err_out;
-        }
         pslice_id = br->num_slices;
         vslice_id = pslice_id;
         sl = &br->slice[vslice_id];
