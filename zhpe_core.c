@@ -816,8 +816,8 @@ int queue_io_rsp(struct io_entry *entry, size_t data_len, int status)
 
 static int parse_platform(char *str)
 {
-    struct pci_dev          *pdev = NULL;
-    uint                    slices_seen = 0;
+    struct pci_dev		*pdev = NULL;
+    uint			slices_seen = 0;
 
     if (!str)
         return -EINVAL;
@@ -1510,8 +1510,7 @@ static int alloc_map_shared_data(struct file_data *fdata)
         goto err_zpage_free;
     }
     /* Initialize the counters to 0 */
-    local_shared_data = (struct zhpe_local_shared_data *)
-                        fdata->local_shared_zpage->queue.pages[0];
+    local_shared_data = (void *)fdata->local_shared_zpage->queue.pages[0];
     for (i = 0; i < MAX_IRQ_VECTORS; i++)
         local_shared_data->handled_counter[i] = 0;
 
@@ -1829,7 +1828,6 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
     /* Wait 1-2 ms for completion. */
     for (i = 0; i < 100; i++) {
         pci_read_config_dword(sl->pdev, pos + ZHPE_DVSEC_MBOX_CTRL_OFF, &val);
-        debug(DEBUG_PCI, "val 0x%x, loops %d\n", val, i);
         if (!(val & ZHPE_DVSEC_MBOX_CTRL_TRIG)) {
             if (val & ZHPE_DVSEC_MBOX_CTRL_ERR)
                 break;
@@ -1850,6 +1848,9 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
     }
 
 out:
+    debug(DEBUG_PCI, "csr 0x%x %s val 0x%llx ret %d\n",
+          csr, (read ? "rd" : "wr"), *data, ret);
+
     return ret;
 }
 
@@ -1864,7 +1865,6 @@ static int csr_get_gcid(struct bridge *br, struct slice *sl)
     ret = csr_access(sl, true, &ozs_core_reg_24, &cid);
     if (ret < 0)
         goto out;
-    debug(DEBUG_PCI, "CID register 0x%llx\n", cid);
     if (!(cid & ZHPE_OZS_CORE_REG_24_CID0_VALID)) {
         ret = -ENXIO;
         goto out;
@@ -1874,7 +1874,6 @@ static int csr_get_gcid(struct bridge *br, struct slice *sl)
         ret = csr_access(sl, true, &ozs_core_reg_23, &sid);
         if (ret < 0)
             goto out;
-        debug(DEBUG_PCI, "SID register 0x%llx\n", sid);
         sid = (sid & ZHPE_GCID_SID_MASK) << ZHPE_GCID_SID_SHIFT;
     }
 
@@ -1893,7 +1892,6 @@ static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
     ret = csr_access(sl, true, &skw_shim_inb_cfg, &cfg);
     if (ret < 0)
         goto out;
-    debug(DEBUG_PCI, "SKW_SHIM_INB_CFG register 0x%llx\n", cfg);
     cfg &= ZHPE_SKW_SHIM_INB_CFG_MASK;
     cfg |= ZHPE_SKW_SHIM_INB_CFG_SETTING;
     ret = csr_access(sl, false, &skw_shim_inb_cfg, &cfg);
@@ -1911,24 +1909,24 @@ static int csr_reset_logs(struct bridge *br, struct slice *sl)
     uint64_t            val;
 
     val = 1;
-    ret = csr_access(sl, true, &xdm_err_hwa_all_status, &val);
+    ret = csr_access(sl, false, &xdm_err_hwa_all_status, &val);
     if (ret < 0)
         goto out;
-    ret = csr_access(sl, true, &xdm_err_hwa_pri_status, &val);
+    ret = csr_access(sl, false, &xdm_err_hwa_pri_status, &val);
     if (ret < 0)
         goto out;
-    ret = csr_access(sl, true, &xdm_err_hwe_all_status, &val);
+    ret = csr_access(sl, false, &xdm_err_hwe_all_status, &val);
     if (ret < 0)
         goto out;
-    ret = csr_access(sl, true, &xdm_err_hwe_pri_status, &val);
+    ret = csr_access(sl, false, &xdm_err_hwe_pri_status, &val);
     if (ret < 0)
         goto out;
 
     val = 0xc;
-    ret = csr_access(sl, true, &xdm_err_all_status, &val);
+    ret = csr_access(sl, false, &xdm_err_all_status, &val);
     if (ret < 0)
         goto out;
-    ret = csr_access(sl, true, &xdm_err_pri_status, &val);
+    ret = csr_access(sl, false, &xdm_err_pri_status, &val);
     if (ret < 0)
         goto out;
     ret = 0;
@@ -1957,8 +1955,10 @@ static int zhpe_probe(struct pci_dev *pdev,
 
     mutex_lock(&br->probe_mutex);
 
-    if (br->num_slices > SLICES)
-            goto err_out;
+    if (br->num_slices > SLICES) {
+        ret = -ENODEV;
+        goto err_out;
+    }
 
     if (zhpe_platform != ZHPE_CARBON) {
         /* Set atomic operations enable capability */
