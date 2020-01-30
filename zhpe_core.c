@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 Hewlett Packard Enterprise Development LP.
+ * Copyright (C) 2017-2020 Hewlett Packard Enterprise Development LP.
  * All rights reserved.
  *
  * This software is available to you under a choice of one of two
@@ -1565,18 +1565,18 @@ static int zhpe_open(struct inode *inode, struct file *file)
     mutex_lock(&br->probe_mutex);
     if (br->num_slices != br->expected_slices) {
         ret = -ENODEV;
-        printk_once(KERN_ERR "%s,%s:num_slices (%u) != expected_slices (%u)\n",
+        printk_once(KERN_ERR "%s:%s:num_slices (%u) != expected_slices (%u)\n",
                     zhpe_driver_name, __func__, br->num_slices,
                     br->expected_slices);
     }
     if (!SLICE_VALID(&br->slice[0])) {
         ret = -ENODEV;
-        printk_once(KERN_ERR "%s,%s:slice zero must be valid\n",
+        printk_once(KERN_ERR "%s:%s:slice zero must be valid\n",
                     zhpe_driver_name, __func__);
     }
     if (br->probe_error < 0) {
         ret = -ENODEV;
-        printk_once(KERN_ERR "%s,%s:error during probe\n",
+        printk_once(KERN_ERR "%s:%s:error during probe\n",
                     zhpe_driver_name, __func__);
     }
     mutex_unlock(&br->probe_mutex);
@@ -1700,12 +1700,6 @@ static int zhpe_open(struct inode *inode, struct file *file)
 #define ZHPE_DVSEC_MBOX_DATAL_OFF (0x38)
 #define ZHPE_DVSEC_MBOX_DATAH_OFF (0x3C)
 #define ZHPE_DVSEC_SLINK_BASE_OFF (0x40)
-/*
- * pfslice: LARK1.SLOT1.PFS0.CORESTRUCTURE0.RQ_CORE_REG_23/24
- * wildcat: CHASSIS1.SEAHAWK1.WILDCAT0.OZS0.GENZ_CORE0.SS_CORE_REG_23/24
- */
-#define ZHPE_OZS_SID_CSR          (0xB8)
-#define ZHPE_OZS_CID_CSR          (0xC0)
 
 /*
  * pfslice: LARK1.SLOT1.PFS0.SKWGPSHIMINBOUND0.SKW_SHIM_INB_CFG
@@ -1721,18 +1715,21 @@ static int zhpe_open(struct inode *inode, struct file *file)
 struct zhpe_csr {
     uint32_t            pfs;
     uint32_t            asic;
+    bool                ozs;
 };
 
 /* 16-bit SID at bit 0, if reg_24 SID_VALID flag set. */
 static struct zhpe_csr ozs_core_reg_23 = {
     .pfs                = 0xB8U,
     .asic               = 0xB8U,
+    .ozs                = true,
 };
 
 /* 12-bit CID at bit 8. CID0 should always be valid, but we'll check anyway.  */
 static struct zhpe_csr ozs_core_reg_24 = {
     .pfs                = 0xC0U,
     .asic               = 0xC0U,
+    .ozs                = true,
 };
 
 #define ZHPE_OZS_CORE_REG_24_CID0_VALID   (0x01)
@@ -1786,6 +1783,7 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
                       uint64_t *data)
 {
     int                 ret = -EIO;
+    uint32_t            off = 0;
     int                 pos;
     uint32_t            val;
     int                 i;
@@ -1799,7 +1797,9 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
         break;
 
     case ZHPE_WILDCAT:
-        csr = zcsr->asic + asic_slice_to_off(sl->pid);
+        csr = zcsr->asic;
+        if (!zcsr->ozs)
+            off = asic_slice_to_off(sl->phys_id);
         break;
 
     default:
@@ -1815,7 +1815,7 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
         debug(DEBUG_PCI, "Mailbox busy\n");
         goto out;
     }
-    pci_write_config_dword(sl->pdev, pos + ZHPE_DVSEC_MBOX_ADDR_OFF, csr);
+    pci_write_config_dword(sl->pdev, pos + ZHPE_DVSEC_MBOX_ADDR_OFF, csr + off);
     cmd = ZHPE_DVSEC_MBOX_CTRL_BE | ZHPE_DVSEC_MBOX_CTRL_TRIG;
     if (!read) {
         cmd |= ZHPE_DVSEC_MBOX_CTRL_WR;
@@ -1829,12 +1829,14 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
     for (i = 0; i < 100; i++) {
         pci_read_config_dword(sl->pdev, pos + ZHPE_DVSEC_MBOX_CTRL_OFF, &val);
         if (!(val & ZHPE_DVSEC_MBOX_CTRL_TRIG)) {
-            if (val & ZHPE_DVSEC_MBOX_CTRL_ERR)
-                break;
+            if (val & ZHPE_DVSEC_MBOX_CTRL_ERR) {
+                debug(DEBUG_PCI, "error = 0x%x\n", val);
+                goto out;
+            }
             /* Success */
             ret = 0;
             if (!read)
-                break;
+                goto out;
             /* Read result. */
             pci_read_config_dword(sl->pdev, pos + ZHPE_DVSEC_MBOX_DATAL_OFF,
                                   &val);
@@ -1842,14 +1844,15 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
             pci_read_config_dword(sl->pdev, pos + ZHPE_DVSEC_MBOX_DATAH_OFF,
                                   &val);
             *data |= ((uint64_t)val) << 32;
-            break;
+            goto out;
         }
         usleep_range(10, 20);
     }
+    debug(DEBUG_PCI, "timeout\n");
 
 out:
-    debug(DEBUG_PCI, "csr 0x%x %s val 0x%llx ret %d\n",
-          csr, (read ? "rd" : "wr"), *data, ret);
+    debug(DEBUG_PCI, "sl %u csr 0x%x/0x%x %s val 0x%llx ret %d\n",
+          sl->phys_id, csr, off, (read ? "rd" : "wr"), *data, ret);
 
     return ret;
 }
@@ -1881,7 +1884,7 @@ static int csr_get_gcid(struct bridge *br, struct slice *sl)
     br->gcid = cid | sid;
 
 out:
-    return ret;
+    return 0;
 }
 
 static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
@@ -1900,7 +1903,7 @@ static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
     ret = 0;
 
  out:
-    return ret;
+    return 0;
 }
 
 static int csr_reset_logs(struct bridge *br, struct slice *sl)
@@ -1932,7 +1935,7 @@ static int csr_reset_logs(struct bridge *br, struct slice *sl)
     ret = 0;
 
  out:
-    return ret;
+    return 0;
 }
 
 static int zhpe_probe(struct pci_dev *pdev,
@@ -2095,7 +2098,7 @@ static int zhpe_probe(struct pci_dev *pdev,
     sl->bar = base_addr;
     sl->phys_base = phys_base;
     sl->id = vslice_id;
-    sl->pid = pslice_id;
+    sl->phys_id = pslice_id;
     sl->pdev = pdev;
     sl->valid = true;
 
@@ -2117,6 +2120,7 @@ static int zhpe_probe(struct pci_dev *pdev,
     }
 
     if (zhpe_platform != ZHPE_CARBON) {
+#if 0
         ret = csr_get_gcid(br, sl);
         if (ret < 0)
             goto err_pci_iounmap;
@@ -2126,6 +2130,7 @@ static int zhpe_probe(struct pci_dev *pdev,
         ret = csr_reset_logs(br, sl);
         if (ret < 0)
             goto err_pci_iounmap;
+#endif
     } else if (genz_gcid == INVALID_GCID) {
         dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
                  zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
@@ -2135,7 +2140,7 @@ static int zhpe_probe(struct pci_dev *pdev,
         br->gcid = genz_gcid;
 
     if (br->num_slices == 1)
-        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = %d\n",
+        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = 0%x\n",
                  zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
                  br->gcid);
 

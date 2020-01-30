@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2019 Hewlett Packard Enterprise Development LP.
+ * Copyright (C) 2018-2020 Hewlett Packard Enterprise Development LP.
  * All rights reserved.
  *
  * This software is available to you under a choice of one of two
@@ -359,7 +359,7 @@ struct slice {
     spinlock_t          zmmu_lock;   /* per-slice zmmu lock */
     bool                valid;       /* slice is fully initialized */
     unsigned int        id;          /* zero based, unique slice id */
-    unsigned int        pid;         /* zero based, unique physical slice id */
+    unsigned int        phys_id;     /* zero based, unique physical slice id */
     struct pci_dev	*pdev;
     /* Revisit: add s_link boolean */
     spinlock_t           xdm_slice_lock; /* locks alloc_count, alloced_bitmap */
