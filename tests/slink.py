@@ -91,8 +91,9 @@ def main():
         if args.verbosity:
             print('do_INIT: uuid={}, gcid={}'.format(
                 init.uuid, init.uuid.gcid_str))
-        zuu = zuuid(gcid=gcid)
-        conn.do_UUID_IMPORT(zuu, 0, None)
+        zuu = init.uuid
+#        zuu = zuuid(gcid=gcid)
+#        conn.do_UUID_IMPORT(zuu, 0, None)
 
         sz4K = 4096
 
