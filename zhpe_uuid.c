@@ -480,10 +480,13 @@ void zhpe_notify_remote_uuids(struct file_data *fdata)
     INIT_LIST_HEAD(&free_msg_list);
     INIT_LIST_HEAD(&teardown_msg_list);
 
+    goto teardown_done;
+#if 0
     if (zhpe_uu_remote_uuid_empty(fdata)) {
         debug(DEBUG_UUID, "no remote UUIDs to TEARDOWN\n");
         goto teardown_done;
     }
+#endif
 
     /* Revisit: what if rbtree changes while we're looping? */
     start = ktime_get();

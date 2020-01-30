@@ -985,6 +985,7 @@ static int zhpe_user_req_INIT(struct io_entry *entry)
     uint32_t            ro_rkey;
     uint32_t            rw_rkey;
     char                str[UUID_STRING_LEN+1];
+    struct uuid_tracker *suu;
 
     rsp->init.magic = ZHPE_MAGIC;
 
@@ -1006,8 +1007,22 @@ static int zhpe_user_req_INIT(struct io_entry *entry)
     if (!uu)
         goto out;
 
+    suu = zhpe_uuid_tracker_alloc_and_insert(&uu->uuid, UUID_TYPE_REMOTE, 0,
+                                             fdata, GFP_ATOMIC, &status);
+    debug(DEBUG_IO, "uu = %px status = %d\n", uu, status);
+    /* and we hold a reference to suu */
+    zhpe_remote_uuid_alloc_and_insert(suu, &fdata->uuid_lock,
+                                      &uu->local->uu_remote_uuid_tree,
+                                      GFP_ATOMIC, &status);
+    debug(DEBUG_IO, "status = %d\n",status);
+
     status = zhpe_rkey_alloc(&ro_rkey, &rw_rkey);
     if (status < 0) {
+        status = zhpe_free_uuid_node(fdata, &fdata->uuid_lock,
+                                     &uu->local->uu_remote_uuid_tree,
+                                     &suu->uuid, false);
+        debug(DEBUG_IO, "status = %d\n", status);
+        zhpe_uuid_remove(suu);
         zhpe_uuid_remove(uu);
         goto out;
     }
