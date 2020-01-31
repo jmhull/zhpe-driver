@@ -1745,6 +1745,7 @@ static int zhpe_open(struct inode *inode, struct file *file)
  * At the moment, the rules for slices to register on slice seem to be:
  * reg + ((pslice >> 1) + 1) * 0x800000 + (pslice & 1) * 0x1000
  */
+
 struct zhpe_csr {
     uint32_t            pfs;
     uint32_t            asic;
@@ -1769,6 +1770,7 @@ static struct zhpe_csr ozs_core_reg_24 = {
 #define ZHPE_OZS_CORE_REG_24_CID0_SHIFT   (0x08)
 #define ZHPE_OZS_CORE_REG_24_SID_VALID    (0x80)
 
+#if 0
 static struct zhpe_csr skw_shim_inb_cfg = {
     .pfs                = 0x73A908U,
     .asic               = 0x7BA908U,
@@ -1806,6 +1808,7 @@ static struct zhpe_csr xdm_err_hwe_pri_status = {
 
 #define ZHPE_SKW_SHIM_INB_CFG_MASK      (~(uint64_t)0xF)
 #define ZHPE_SKW_SHIM_INB_CFG_SETTING   ((uint64_t)0x9)
+#endif
 
 static uint32_t asic_slice_to_off(uint32_t pslice_id)
 {
@@ -1920,6 +1923,7 @@ out:
     return 0;
 }
 
+#if 0
 static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
 {
     int                 ret;
@@ -1970,6 +1974,7 @@ static int csr_reset_logs(struct bridge *br, struct slice *sl)
  out:
     return 0;
 }
+#endif
 
 static int zhpe_probe(struct pci_dev *pdev,
                       const struct pci_device_id *pdev_id)
@@ -2155,10 +2160,10 @@ static int zhpe_probe(struct pci_dev *pdev,
     }
 
     if (zhpe_platform != ZHPE_CARBON) {
-#if 0
         ret = csr_get_gcid(br, sl);
         if (ret < 0)
             goto err_pci_iounmap;
+#if 0
         ret = csr_set_inb_cfg(br, sl);
         if (ret < 0)
             goto err_pci_iounmap;
@@ -2175,7 +2180,7 @@ static int zhpe_probe(struct pci_dev *pdev,
         br->gcid = genz_gcid;
 
     if (br->num_slices == 1)
-        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = 0%x\n",
+        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = 0x%07x\n",
                  zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
                  br->gcid);
 
