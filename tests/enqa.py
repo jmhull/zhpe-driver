@@ -80,6 +80,13 @@ def parse_args():
                         help='increase output verbosity')
     return parser.parse_args()
 
+def rdm_check(rdm_cmpl, enqa):
+    if args.verbosity:
+        print('RDM cmpl: {}'.format(rdm_cmpl.enqa))
+    if enqa.enqa.payload[0:52] != rdm_cmpl.enqa.payload[0:52]:
+        runtime_err('FAIL: RDM: payload is {} and should be {}'.format(
+            rdm_cmpl.enqa.payload[0:52], enqa.enqa.payload[0:52]))
+
 def main():
     global args
     args = parse_args()
@@ -107,8 +114,8 @@ def main():
         enqa.enqa.rspctxid = rdm.rsp_rqa.info.rspctxid
         str1 = b'hello, world'
         len1 = len(str1)
-        enqa.enqa.payload[0:52] = os.urandom(52)
         enqa.enqa.payload[0:len1] = str1
+        enqa.enqa.payload[len1:52] = os.urandom(52 - len1)
 
         if args.verbosity:
             print("cmd: {}".format(enqa))
@@ -125,13 +132,14 @@ def main():
                 e, e.status, e.request_id))
         if args.keyboard:
             set_trace()
-        rdm_cmpls = rdm.get_poll(verbosity=args.verbosity)
-#        rdm_cmpl = rdm.get_cmpl()
+        rdm_cmpls= rdm.get_poll(verbosity=args.verbosity)
         if args.verbosity:
-            print('RDM cmpl: {}'.format(rdm_cmpl.enqa))
-        if enqa.enqa.payload[0:52] != rdm_cmpl.enqa.payload[0:52]:
-            runtime_err('FAIL: RDM: payload is {} and should be {}'.format(
-                rdm_cmpl.enqa.payload[0:52], enqa.enqa.payload[0:52]))
+            for c in range(len(rdm_cmpls)):
+                rdm_check(rdm_cmpls[c], enqa)
+        enqa.enqa.payload[len1:52] = os.urandom(52 - len1)
+        xdm.queue_cmd(enqa)
+        rdm_cmpl = rdm.get_cmpl()
+        rdm_check(rdm_cmpl, enqa)
 
     # end with
 
