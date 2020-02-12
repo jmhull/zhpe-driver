@@ -546,6 +546,9 @@ class xdm_cmd(Union):
         elif self.opcode == XDM_CMD.GET or self.opcode == XDM_CMD.PUT:
             r += ', sz={:#x}, rd={:#x}, wr={:#x}'.format(
                 self.getput.size, self.getput.read_addr, self.getput.write_addr)
+        elif self.opcode == XDM_CMD.ENQA:
+            r += ', dgcid={:#x} rspctxid={:#x}'.format(
+                self.enqa.dgcid, self.enqa.rspctxid)
         r += ')'
         return r
 
