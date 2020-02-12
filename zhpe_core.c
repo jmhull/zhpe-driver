@@ -1770,7 +1770,6 @@ static struct zhpe_csr ozs_core_reg_24 = {
 #define ZHPE_OZS_CORE_REG_24_CID0_SHIFT   (0x08)
 #define ZHPE_OZS_CORE_REG_24_SID_VALID    (0x80)
 
-#if 0
 static struct zhpe_csr skw_shim_inb_cfg = {
     .pfs                = 0x73A908U,
     .asic               = 0x7BA908U,
@@ -1806,9 +1805,23 @@ static struct zhpe_csr xdm_err_hwe_pri_status = {
     .asic               = 0x730800U,
 };
 
+static struct zhpe_csr xdm_size_cfg0 = {
+    .pfs                = 0x705800U,
+    .asic               = 0x730210U,
+};
+
+static struct zhpe_csr xdm_priority_cfg0 = {
+    .pfs                = 0x705800U,
+    .asic               = 0x730228U,
+};
+
+static struct zhpe_csr xdm_priority_cfg1 = {
+    .pfs                = 0x705800U,
+    .asic               = 0x730230U,
+};
+
 #define ZHPE_SKW_SHIM_INB_CFG_MASK      (~(uint64_t)0xF)
 #define ZHPE_SKW_SHIM_INB_CFG_SETTING   ((uint64_t)0x9)
-#endif
 
 static uint32_t asic_slice_to_off(uint32_t pslice_id)
 {
@@ -1923,7 +1936,6 @@ out:
     return 0;
 }
 
-#if 0
 static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
 {
     int                 ret;
@@ -1974,7 +1986,6 @@ static int csr_reset_logs(struct bridge *br, struct slice *sl)
  out:
     return 0;
 }
-#endif
 
 static int zhpe_probe(struct pci_dev *pdev,
                       const struct pci_device_id *pdev_id)
@@ -1996,7 +2007,7 @@ static int zhpe_probe(struct pci_dev *pdev,
 
     mutex_lock(&br->probe_mutex);
 
-    if (br->num_slices > SLICES) {
+    if (br->num_slices >= SLICES) {
         ret = -ENODEV;
         goto err_out;
     }
@@ -2160,17 +2171,17 @@ static int zhpe_probe(struct pci_dev *pdev,
     }
 
     if (zhpe_platform != ZHPE_CARBON) {
-        ret = csr_get_gcid(br, sl);
-        if (ret < 0)
-            goto err_pci_iounmap;
-#if 0
+        if (br->num_slices == 1) {
+            ret = csr_get_gcid(br, sl);
+            if (ret < 0)
+                goto err_pci_iounmap;
+        }
         ret = csr_set_inb_cfg(br, sl);
         if (ret < 0)
             goto err_pci_iounmap;
         ret = csr_reset_logs(br, sl);
         if (ret < 0)
             goto err_pci_iounmap;
-#endif
     } else if (genz_gcid == INVALID_GCID) {
         dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
                  zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
