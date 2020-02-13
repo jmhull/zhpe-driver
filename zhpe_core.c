@@ -1950,8 +1950,9 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
     debug(DEBUG_PCI, "timeout\n");
 
 out:
-    debug(DEBUG_PCI, "sl %u csr 0x%x/0x%x %s val 0x%llx ret %d\n",
-          sl->phys_id, csr, off, (read ? "rd" : "wr"), *data, ret);
+    dev_info(&sl->pdev->dev, "%s:%s:sl %u csr 0x%x/0x%x %s val 0x%llx ret %d\n",
+             zhpe_driver_name, __func__, sl->phys_id, csr, off,
+             (read ? "rd" : "wr"), *data, ret);
 
     return ret;
 }
