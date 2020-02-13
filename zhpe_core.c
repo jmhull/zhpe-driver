@@ -75,12 +75,65 @@ MODULE_PARM_DESC(kmsg_timeout, "kernel-to-kernel message timeout in seconds");
  */
 
 static ulong wr_pusher_phyaddr = 0;
-static uint wr_pusher_ctl_28 = 0x509101;
+static uint wr_pusher_dvsec_28 = 0x509101;
 
 module_param(wr_pusher_phyaddr, ulong, 0444);
 MODULE_PARM_DESC(wr_pusher_phyaddr, "Write-pusher physical address");
-module_param(wr_pusher_ctl_28, uint, 0444);
-MODULE_PARM_DESC(wr_pusher_ctl_28, "Write-pusher configuration offset 0x28");
+module_param(wr_pusher_dvsec_28, uint, 0444);
+MODULE_PARM_DESC(wr_pusher_dvsec_28, "Write-pusher DVSEC offset 0x28");
+
+/*
+ * Set acks pushed by write-pusher. Reset values are correct, but
+ * were being cleared at one point.
+ *
+ * SKW_SHIM_INB_CFG:
+ * [0:0] rspzmmu_write_ack_type, value 1, default 1
+ * [1:1] rdm_write_ack_type, value 0, default 0
+ * [2:2] xdm_write_ack_type, value 0, default 0
+ * [3:3] xdm_sync_ack_type, value 1, default 1
+ */
+
+static ulong skw_shim_inb_cfg_mask      = ~0x000000000000000FUL;
+static ulong skw_shim_inb_cfg_bits      =  0x0000000000000009UL;
+
+module_param(skw_shim_inb_cfg_mask, ulong, 0444);
+MODULE_PARM_DESC(skw_shim_inb_cfg_mask, "new = (current & mask) | bits");
+module_param(skw_shim_inb_cfg_bits, ulong, 0444);
+MODULE_PARM_DESC(skw_shim_inb_cfg_bits, "new = (current & mask) | bits");
+
+/*
+ * Queue priority settings:
+ * XDM_SIZE_CFG0: limit local/fabric move engine to two commands at a time.
+ * [28:24] fab_recirc, value 1, default 31
+ * [60:56] lcl_recirc, value 1. default 31
+ * XDM_PRIORITY_CFGX: limit local/fabric move engine to one command per prio
+ * [44:40] lcl_recirc_cap, value 0, default 31
+ * [52:48] fab_recirc_cap, value 0, default 31
+ * XDM_PRIORITY_CFGX: limit prio to 200 command pool entries
+ * [39:32] cmd_pool_cap, value 199, default 255
+ */
+
+static ulong xdm_size_cfg0_mask         = ~0x1F0000001F000000UL;
+static ulong xdm_size_cfg0_bits         =  0x0100000001000000UL;
+static ulong xdm_priority_cfg0_mask     = ~0x001F1FFF00000000UL;
+static ulong xdm_priority_cfg0_bits     =  0x000000C700000000UL;
+static ulong xdm_priority_cfg1_mask     = ~0x001F1FFF00000000UL;
+static ulong xdm_priority_cfg1_bits     =  0x000000C700000000UL;
+
+module_param(xdm_size_cfg0_mask, ulong, 0444);
+MODULE_PARM_DESC(xdm_size_cfg0_mask, "new = (current & mask) | bits");
+module_param(xdm_size_cfg0_bits, ulong, 0444);
+MODULE_PARM_DESC(xdm_size_cfg0_bits, "new = (current & mask) | bits");
+
+module_param(xdm_priority_cfg0_mask, ulong, 0444);
+MODULE_PARM_DESC(xdm_priority_cfg0_mask, "new = (current & mask) | bits");
+module_param(xdm_priority_cfg0_bits, ulong, 0444);
+MODULE_PARM_DESC(xdm_priority_cfg0_bits, "new = (current & mask) | bits");
+
+module_param(xdm_priority_cfg1_mask, ulong, 0444);
+MODULE_PARM_DESC(xdm_priority_cfg1_mask, "new = (current & mask) | bits");
+module_param(xdm_priority_cfg1_bits, ulong, 0444);
+MODULE_PARM_DESC(xdm_priority_cfg1_bits, "new = (current & mask) | bits");
 
 const char zhpe_driver_name[] = DRIVER_NAME;
 
@@ -1766,28 +1819,14 @@ static struct zhpe_csr ozs_core_reg_24 = {
     .ozs                = true,
 };
 
-#define ZHPE_OZS_CORE_REG_24_CID0_VALID   (0x01)
-#define ZHPE_OZS_CORE_REG_24_CID0_SHIFT   (0x08)
-#define ZHPE_OZS_CORE_REG_24_SID_VALID    (0x80)
+#define OZS_CORE_REG_24_CID0_VALID      (0x01)
+#define OZS_CORE_REG_24_CID0_SHIFT      (0x08)
+#define OZS_CORE_REG_24_SID_VALID       (0x80)
 
 static struct zhpe_csr skw_shim_inb_cfg = {
     .pfs                = 0x73A908U,
     .asic               = 0x7BA908U,
 };
-
-/*
- * Set acks pushed by write-pusher. Reset values are correct, but
- * were being cleared at one point.
- *
- * SKW_SHIM_INB_CFG:
- * [0:0] rspzmmu_write_ack_type, value 1, default 1
- * [1:1] rdm_write_ack_type, value 0, default 0
- * [2:2] xdm_write_ack_type, value 0, default 0
- * [3:3] xdm_sync_ack_type, value 1, default 1
- */
-
-#define ZHPE_SKW_SHIM_INB_CFG_MASK      (~(uint64_t)0xF)
-#define ZHPE_SKW_SHIM_INB_CFG_SETTING   ( (uint64_t)0x9)
 
 static struct zhpe_csr xdm_err_all_status = {
     .pfs                = 0x705088U,
@@ -1833,24 +1872,6 @@ static struct zhpe_csr xdm_priority_cfg1 = {
     .pfs                = 0x705230U,
     .asic               = 0x730230U,
 };
-
-/*
- * Queue priority settings:
-
- * XDM_SIZE_CFG0: limit local/fabric move engine to two commands at a time.
- * [28:24] fab_recirc, value 1, default 31
- * [60:56] lcl_recirc, value 1. default 31
- * XDM_PRIORITY_CFGX: limit local/fabric move engine to one command per prio
- * [44:40] lcl_recirc_cap, value 0, default 31
- * [52:48] fab_recirc_cap, value 0, default 31
- * XDM_PRIORITY_CFGX: limit prio to 200 command pool entries
- * [39:32] cmd_pool_cap, value 199, default 255
- */
-
-#define ZHPE_XDM_SIZE_CFG0_MASK         (~(uint64_t)0x1F0000001F000000UL)
-#define ZHPE_XDM_SIZE_CFG0_SETTING      ( (uint64_t)0x0100000001000000UL)
-#define ZHPE_XDM_PRIORITY_CFGX_MASK     (~(uint64_t)0x001F1FFF00000000UL)
-#define ZHPE_XDM_PRIORITY_CFGX_SETTING  ( (uint64_t)0x000000C700000000UL)
 
 static uint32_t asic_slice_to_off(uint32_t pslice_id)
 {
@@ -1946,19 +1967,19 @@ static int csr_get_gcid(struct bridge *br, struct slice *sl)
     ret = csr_access(sl, true, &ozs_core_reg_24, &cid);
     if (ret < 0)
         goto out;
-    if (!(cid & ZHPE_OZS_CORE_REG_24_CID0_VALID)) {
+    if (!(cid & OZS_CORE_REG_24_CID0_VALID)) {
         ret = -ENXIO;
         goto out;
     }
 
-    if (cid & ZHPE_OZS_CORE_REG_24_SID_VALID) {
+    if (cid & OZS_CORE_REG_24_SID_VALID) {
         ret = csr_access(sl, true, &ozs_core_reg_23, &sid);
         if (ret < 0)
             goto out;
         sid = (sid & ZHPE_GCID_SID_MASK) << ZHPE_GCID_SID_SHIFT;
     }
 
-    cid = (cid >> ZHPE_OZS_CORE_REG_24_CID0_SHIFT) & ZHPE_GCID_CID_MASK;
+    cid = (cid >> OZS_CORE_REG_24_CID0_SHIFT) & ZHPE_GCID_CID_MASK;
     br->gcid = cid | sid;
 
 out:
@@ -1973,8 +1994,8 @@ static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
     ret = csr_access(sl, true, &skw_shim_inb_cfg, &cfg);
     if (ret < 0)
         goto out;
-    cfg &= ZHPE_SKW_SHIM_INB_CFG_MASK;
-    cfg |= ZHPE_SKW_SHIM_INB_CFG_SETTING;
+    cfg &= skw_shim_inb_cfg_mask;
+    cfg |= skw_shim_inb_cfg_bits;
     ret = csr_access(sl, false, &skw_shim_inb_cfg, &cfg);
     if (ret < 0)
         goto out;
@@ -1992,24 +2013,24 @@ static int csr_set_xdm_prio(struct bridge *br, struct slice *sl)
     ret = csr_access(sl, true, &xdm_size_cfg0, &cfg);
     if (ret < 0)
         goto out;
-    cfg &= ZHPE_XDM_SIZE_CFG0_MASK;
-    cfg |= ZHPE_XDM_SIZE_CFG0_SETTING;
+    cfg &= xdm_size_cfg0_mask;
+    cfg |= xdm_size_cfg0_bits;
     ret = csr_access(sl, false, &xdm_size_cfg0, &cfg);
     if (ret < 0)
         goto out;
     ret = csr_access(sl, true, &xdm_priority_cfg0, &cfg);
     if (ret < 0)
         goto out;
-    cfg &= ZHPE_XDM_PRIORITY_CFGX_MASK;
-    cfg |= ZHPE_XDM_PRIORITY_CFGX_SETTING;
+    cfg &= xdm_priority_cfg0_mask;
+    cfg |= xdm_priority_cfg0_bits;
     ret = csr_access(sl, false, &xdm_priority_cfg0, &cfg);
     if (ret < 0)
         goto out;
     ret = csr_access(sl, true, &xdm_priority_cfg1, &cfg);
     if (ret < 0)
         goto out;
-    cfg &= ZHPE_XDM_PRIORITY_CFGX_MASK;
-    cfg |= ZHPE_XDM_PRIORITY_CFGX_SETTING;
+    cfg &= xdm_priority_cfg1_mask;
+    cfg |= xdm_priority_cfg1_bits;
     ret = csr_access(sl, false, &xdm_priority_cfg1, &cfg);
     if (ret < 0)
         goto out;
@@ -2158,7 +2179,7 @@ static int zhpe_probe(struct pci_dev *pdev,
         pci_write_config_dword(pdev, pos + ZHPE_DVSEC_WP_CTL_24_OFF,
                                ZHPE_DVSEC_WP_CTL_24_VAL);
         pci_write_config_dword(pdev, pos + ZHPE_DVSEC_WP_CTL_28_OFF,
-                               wr_pusher_ctl_28);
+                               wr_pusher_dvsec_28);
     } else {
         /* Carbon:zero based slice ID */
         pslice_id = br->num_slices;
