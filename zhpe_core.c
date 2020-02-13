@@ -1950,9 +1950,8 @@ static int csr_access(struct slice *sl, bool read, struct zhpe_csr *zcsr,
     debug(DEBUG_PCI, "timeout\n");
 
 out:
-    dev_info(&sl->pdev->dev, "%s:%s:sl %u csr 0x%x/0x%x %s val 0x%llx ret %d\n",
-             zhpe_driver_name, __func__, sl->phys_id, csr, off,
-             (read ? "rd" : "wr"), *data, ret);
+    dev_info(&sl->pdev->dev, "%s:sl %u csr 0x%x/0x%x %s val 0x%llx ret %d\n",
+             __func__, sl->phys_id, csr, off, (read ? "rd" : "wr"), *data, ret);
 
     return ret;
 }
@@ -2105,27 +2104,24 @@ static int zhpe_probe(struct pci_dev *pdev,
         ret = pcie_capability_read_word(pdev, PCI_EXP_DEVCTL2, &devctl2);
         if (ret < 0) {
             dev_warn(&pdev->dev,
-                     "%s:%s,%u,%d:"
+                     "%s,%u,%d:"
                      "PCIe AtomicOp pcie_capability_read_word failed,"
                      " ret = 0x%x\n",
-                     zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
-                     ret);
+                     __func__, __LINE__, task_pid_nr(current), ret);
             goto err_out;
         } else if (!(devctl2 & PCI_EXP_DEVCTL2_ATOMIC_REQ)) {
             dev_warn(&pdev->dev,
-                     "%s:%s,%u,%d:"
+                     "%s,%u,%d:"
                      "PCIe AtomicOp capability enable failed, devctl2 = 0x%x\n",
-                     zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
-                     (uint)devctl2);
+                     __func__, __LINE__, task_pid_nr(current), (uint)devctl2);
             ret = -EIO;
             goto err_out;
         }
         /* Get the virtual slice ID from the device. */
         pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_DVSEC);
         if (!pos) {
-            dev_warn(&pdev->dev, "%s:%s,%u,%d:No DVSEC capability found\n",
-                     zhpe_driver_name, __func__, __LINE__,
-                     task_pid_nr(current));
+            dev_warn(&pdev->dev, "%s,%u,%d:No DVSEC capability found\n",
+                     __func__, __LINE__, task_pid_nr(current));
             ret = -ENODEV;
             goto err_out;
         }
@@ -2143,17 +2139,15 @@ static int zhpe_probe(struct pci_dev *pdev,
         /* Ignore duplicates. */
         sl = &br->slice[vslice_id];
         if (SLICE_VALID(sl)) {
-            dev_warn(&pdev->dev, "%s:%s,%u,%d:slice %d already found\n",
-                     zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
-                     pslice_id);
+            dev_warn(&pdev->dev, "%s,%u,%d:slice %d already found\n",
+                     __func__, __LINE__, task_pid_nr(current), pslice_id);
             ret = -ENODEV;
             goto err_out;
         }
         if (zhpe_platform == ZHPE_WILDCAT && !slink_base)
             slink_base = 0x400;
-        dev_info(&pdev->dev, "%s:%s,%u,%d:pslice = %d, vslice = %d"
-                 " slink = 0x%x\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
+        dev_info(&pdev->dev, "%s,%u,%d:pslice = %d, vslice = %d slink = 0x%x\n",
+                 __func__, __LINE__, task_pid_nr(current),
                  pslice_id, vslice_id, slink_base);
 
         /* Base is in GiB */
@@ -2164,9 +2158,8 @@ static int zhpe_probe(struct pci_dev *pdev,
                       zhpe_reqz_phy_cpuvisible_off);
             } else if (zhpe_reqz_phy_cpuvisible_off !=
                        ((uint64_t)slink_base << 30)) {
-                dev_warn(&pdev->dev, "%s:%s,%u,%d:slink disabled\n",
-                         zhpe_driver_name, __func__, __LINE__,
-                         task_pid_nr(current));
+                dev_warn(&pdev->dev, "%s,%u,%d:slink disabled\n",
+                         __func__, __LINE__, task_pid_nr(current));
                 zhpe_reqz_phy_cpuvisible_off |= 1;
             }
         }
@@ -2200,8 +2193,7 @@ static int zhpe_probe(struct pci_dev *pdev,
 
     if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64))) {
         ret = -ENOSPC;
-        dev_warn(&pdev->dev, "%s: No 64-bit DMA available\n",
-                 zhpe_driver_name);
+        dev_warn(&pdev->dev, "No 64-bit DMA available\n");
         goto err_pci_disable_device;
     }
 
@@ -2290,17 +2282,16 @@ static int zhpe_probe(struct pci_dev *pdev,
         if (ret < 0)
             goto err_iommu_free;
     } else if (genz_gcid == INVALID_GCID) {
-        dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
+        dev_warn(&pdev->dev, "%s,%u,%d:genz_gcid not set\n",
+                 __func__, __LINE__, task_pid_nr(current));
         ret = -EINVAL;
         goto err_iommu_free;
     } else
         br->gcid = genz_gcid;
 
     if (br->num_slices == 1)
-        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = 0x%07x\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
-                 br->gcid);
+        dev_info(&pdev->dev, "%s,%u,%d:gcid = 0x%07x\n",
+                 __func__, __LINE__, task_pid_nr(current), br->gcid);
 
     if (sl->id == 0) {
         /* allocate driver-driver msg queues on slice 0 only */
@@ -2311,7 +2302,7 @@ static int zhpe_probe(struct pci_dev *pdev,
         }
     }
     pci_set_master(pdev);
-    dev_info(&pdev->dev, "%s:%s:successful\n", zhpe_driver_name, __func__);
+    dev_info(&pdev->dev, "%s:successful\n", __func__);
 
     mutex_unlock(&br->probe_mutex);
 
