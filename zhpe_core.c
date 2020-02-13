@@ -1775,6 +1775,20 @@ static struct zhpe_csr skw_shim_inb_cfg = {
     .asic               = 0x7BA908U,
 };
 
+/*
+ * Set acks pushed by write-pusher. Reset values are correct, but
+ * were being cleared at one point.
+ *
+ * SKW_SHIM_INB_CFG:
+ * [0:0] rspzmmu_write_ack_type, value 1, default 1
+ * [1:1] rdm_write_ack_type, value 0, default 0
+ * [2:2] xdm_write_ack_type, value 0, default 0
+ * [3:3] xdm_sync_ack_type, value 1, default 1
+ */
+
+#define ZHPE_SKW_SHIM_INB_CFG_MASK      (~(uint64_t)0xF)
+#define ZHPE_SKW_SHIM_INB_CFG_SETTING   ( (uint64_t)0x9)
+
 static struct zhpe_csr xdm_err_all_status = {
     .pfs                = 0x705088U,
     .asic               = 0x730088U,
@@ -1806,22 +1820,37 @@ static struct zhpe_csr xdm_err_hwe_pri_status = {
 };
 
 static struct zhpe_csr xdm_size_cfg0 = {
-    .pfs                = 0x705800U,
+    .pfs                = 0x705210U,
     .asic               = 0x730210U,
 };
 
 static struct zhpe_csr xdm_priority_cfg0 = {
-    .pfs                = 0x705800U,
+    .pfs                = 0x705228U,
     .asic               = 0x730228U,
 };
 
 static struct zhpe_csr xdm_priority_cfg1 = {
-    .pfs                = 0x705800U,
+    .pfs                = 0x705230U,
     .asic               = 0x730230U,
 };
 
-#define ZHPE_SKW_SHIM_INB_CFG_MASK      (~(uint64_t)0xF)
-#define ZHPE_SKW_SHIM_INB_CFG_SETTING   ((uint64_t)0x9)
+/*
+ * Queue priority settings:
+
+ * XDM_SIZE_CFG0: limit local/fabric move engine to two commands at a time.
+ * [28:24] fab_recirc, value 1, default 31
+ * [60:56] lcl_recirc, value 1. default 31
+ * XDM_PRIORITY_CFGX: limit local/fabric move engine to one command per prio
+ * [44:40] lcl_recirc_cap, value 0, default 31
+ * [52:48] fab_recirc_cap, value 0, default 31
+ * XDM_PRIORITY_CFGX: limit prio to 200 command pool entries
+ * [39:32] cmd_pool_cap, value 199, default 255
+ */
+
+#define ZHPE_XDM_SIZE_CFG0_MASK         (~(uint64_t)0x1F0000001F000000UL)
+#define ZHPE_XDM_SIZE_CFG0_SETTING      ( (uint64_t)0x0100000001000000UL)
+#define ZHPE_XDM_PRIORITY_CFGX_MASK     (~(uint64_t)0x001F1FFF00000000UL)
+#define ZHPE_XDM_PRIORITY_CFGX_SETTING  ( (uint64_t)0x000000C700000000UL)
 
 static uint32_t asic_slice_to_off(uint32_t pslice_id)
 {
@@ -1947,6 +1976,41 @@ static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
     cfg &= ZHPE_SKW_SHIM_INB_CFG_MASK;
     cfg |= ZHPE_SKW_SHIM_INB_CFG_SETTING;
     ret = csr_access(sl, false, &skw_shim_inb_cfg, &cfg);
+    if (ret < 0)
+        goto out;
+    ret = 0;
+
+ out:
+    return 0;
+}
+
+static int csr_set_xdm_prio(struct bridge *br, struct slice *sl)
+{
+    int                 ret;
+    uint64_t            cfg;
+
+    ret = csr_access(sl, true, &xdm_size_cfg0, &cfg);
+    if (ret < 0)
+        goto out;
+    cfg &= ZHPE_XDM_SIZE_CFG0_MASK;
+    cfg |= ZHPE_XDM_SIZE_CFG0_SETTING;
+    ret = csr_access(sl, false, &xdm_size_cfg0, &cfg);
+    if (ret < 0)
+        goto out;
+    ret = csr_access(sl, true, &xdm_priority_cfg0, &cfg);
+    if (ret < 0)
+        goto out;
+    cfg &= ZHPE_XDM_PRIORITY_CFGX_MASK;
+    cfg |= ZHPE_XDM_PRIORITY_CFGX_SETTING;
+    ret = csr_access(sl, false, &xdm_priority_cfg0, &cfg);
+    if (ret < 0)
+        goto out;
+    ret = csr_access(sl, true, &xdm_priority_cfg1, &cfg);
+    if (ret < 0)
+        goto out;
+    cfg &= ZHPE_XDM_PRIORITY_CFGX_MASK;
+    cfg |= ZHPE_XDM_PRIORITY_CFGX_SETTING;
+    ret = csr_access(sl, false, &xdm_priority_cfg1, &cfg);
     if (ret < 0)
         goto out;
     ret = 0;
@@ -2170,31 +2234,6 @@ static int zhpe_probe(struct pci_dev *pdev,
         goto err_pci_iounmap;
     }
 
-    if (zhpe_platform != ZHPE_CARBON) {
-        if (br->num_slices == 1) {
-            ret = csr_get_gcid(br, sl);
-            if (ret < 0)
-                goto err_pci_iounmap;
-        }
-        ret = csr_set_inb_cfg(br, sl);
-        if (ret < 0)
-            goto err_pci_iounmap;
-        ret = csr_reset_logs(br, sl);
-        if (ret < 0)
-            goto err_pci_iounmap;
-    } else if (genz_gcid == INVALID_GCID) {
-        dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
-        ret = -EINVAL;
-        goto err_pci_iounmap;
-    } else
-        br->gcid = genz_gcid;
-
-    if (br->num_slices == 1)
-        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = 0x%07x\n",
-                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
-                 br->gcid);
-
     pci_set_drvdata(pdev, sl);
 
     /* Initialize this pci_dev with the AMD iommu */
@@ -2212,6 +2251,34 @@ static int zhpe_probe(struct pci_dev *pdev,
         debug(DEBUG_PCI, "zhpe_register_interrupts failed with ret=%d\n", ret);
         goto err_iommu_free;
     }
+
+    if (zhpe_platform != ZHPE_CARBON) {
+        if (sl->id == 0) {
+            ret = csr_get_gcid(br, sl);
+            if (ret < 0)
+                goto err_iommu_free;
+        }
+        ret = csr_set_inb_cfg(br, sl);
+        if (ret < 0)
+            goto err_iommu_free;
+        ret = csr_set_xdm_prio(br, sl);
+        if (ret < 0)
+            goto err_iommu_free;
+        ret = csr_reset_logs(br, sl);
+        if (ret < 0)
+            goto err_iommu_free;
+    } else if (genz_gcid == INVALID_GCID) {
+        dev_warn(&pdev->dev, "%s:%s,%u,%d:genz_gcid not set\n",
+                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current));
+        ret = -EINVAL;
+        goto err_iommu_free;
+    } else
+        br->gcid = genz_gcid;
+
+    if (br->num_slices == 1)
+        dev_info(&pdev->dev, "%s:%s,%u,%d:gcid = 0x%07x\n",
+                 zhpe_driver_name, __func__, __LINE__, task_pid_nr(current),
+                 br->gcid);
 
     if (sl->id == 0) {
         /* allocate driver-driver msg queues on slice 0 only */
@@ -2232,9 +2299,8 @@ static int zhpe_probe(struct pci_dev *pdev,
     zhpe_free_interrupts(pdev);
 
  err_iommu_free:
-    if (!no_iommu) {
+    if (!no_iommu)
         amd_iommu_free_device(pdev);
-    }
 
  err_pci_iounmap:
     pci_iounmap(pdev, sl->bar);
