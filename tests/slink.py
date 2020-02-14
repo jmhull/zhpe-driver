@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (C) 2019 Hewlett Packard Enterprise Development LP.
+# Copyright (C) 2020 Hewlett Packard Enterprise Development LP.
 # All rights reserved.
 #
 # This software is available to you under a choice of one of two
@@ -95,28 +95,44 @@ def main():
 #        zuu = zuuid(gcid=gcid)
 #        conn.do_UUID_IMPORT(zuu, 0, None)
 
-        sz4K = 4096
+        sz64K = 1 << 16
 
-        mm = mmap.mmap(-1, sz4K)
+        mm = mmap.mmap(-1, sz64K)
         v, l = zhpe.mmap_vaddr_len(mm)
-        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)  # req: GET/PUT/GETREM/PUTREM, 4K
-        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, sz4K, MR.GPGRPRIC)
-        rmm = mmap.mmap(f.fileno(), sz4K, offset=rsp_rmr.offset)
+        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)  # req: GET/PUT/GETREM/PUTREM,64K
+        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, sz64K, MR.GPGRPRIC)
+        rmm = mmap.mmap(f.fileno(), sz64K, offset=rsp_rmr.offset)
         v_rmm, l_rmm = zhpe.mmap_vaddr_len(rmm)
 
         str1 = b'12345678'
         len1 = len(str1)
-        off1 = 0x9A0
+        off1 = 0
+        off1x = off1 ^ 0xFF00
+
+        mm[off1:off1+len1] = str1
+        if args.verbosity:
+            print('mm (initial)="{}"'.format(mm[off1:off1+len1]))
+        mm[off1x:off1x+len1] = str1
+        if args.verbosity:
+            print('mm (initial)="{}"'.format(mm[off1x:off1x+len1]))
+        if args.keyboard:
+            set_trace()
+        zhpe.invalidate(v_rmm+off1, len1, True)
+        zhpe.invalidate(v_rmm+off1x, len1, True)
+        if mm[off1:off1+len1] != rmm[off1:off1+len1]:
+            runtime_err('Error: mm "{}" != rmm "{}"'.format(
+                mm[off1:off1+len1], rmm[off1:off1+len1]))
+        if mm[off1x:off1x+len1] != rmm[off1x:off1x+len1]:
+            runtime_err('Error: mm "{}" != rmm "{}"'.format(
+                mm[off1x:off1x+len1], rmm[off1x:off1x+len1]))
+
+        sys.exit(0)
+
         str2 = b'abcdefgh'
         len2 = len(str2)
         off2 = off1 + len2
         len1_2 = len1 + len2
 
-        mm[off1:off1+len1] = str1
-        if args.verbosity:
-            print('mm (initial)="{}"'.format(mm[off1:off1+len1]))
-        if args.keyboard:
-            set_trace()
         # invalidate rmm to read fresh data
         zhpe.invalidate(v_rmm+off1, len1, True)
         if args.verbosity:
@@ -137,7 +153,7 @@ def main():
                 mm[off1:off1+len1_2], rmm[off1:off1+len1_2]))
 
         rmm.close()
-        conn.do_RMR_FREE(zuu, rsp.rsp_zaddr, sz4K, MR.GPGRPRIC,
+        conn.do_RMR_FREE(zuu, rsp.rsp_zaddr, sz64K, MR.GPGRPRIC,
                          rsp_rmr.req_addr)
         conn.do_MR_FREE(v, l, MR.GPGRPRI, rsp.rsp_zaddr)
         mm.close()
