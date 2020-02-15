@@ -38,6 +38,7 @@ import contextlib
 import mmap
 import argparse
 import os
+import errno
 import hashlib
 from ctypes import *
 from pdb import set_trace
@@ -48,23 +49,20 @@ from zhpe import MR, UU
 from zhpe import zuuid, XDMcompletionError
 from tests import Tests
 
-class ModuleParams():
-    def __init__(self, mod='zhpe'):
-        self.mod = mod
-        self._path = '/sys/module/' + mod + '/parameters/'
-        self._files = os.listdir(self._path)
-        self.params = {}
-        for f in self._files:
-            with open(self._path + f, 'r') as fp:
-                val = fp.read().rstrip()
-                try:
-                    self.params[f] = int(val)
-                except ValueError:
-                    self.params[f] = val
-        self.__dict__.update(self.params)
+class Queue():
+    def __init__(self, xdm, cmds):
+        self.xdm = xdm
+        self.cmds = cmds
+        self.cmps = cmds
+        self.start = 0
 
 def runtime_err(*arg):
     raise RuntimeError(*arg)
+# Think about something like this, perhaps.
+#    if args.verbosity:
+#        raise RuntimeError(*arg)
+#    else:
+#        print(*arg)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -72,99 +70,85 @@ def parse_args():
                         help='the zhpe character device file')
     parser.add_argument('-k', '--keyboard', action='store_true',
                         help='invoke interactive keyboard')
+    parser.add_argument('-c', '--commands', default=1, type=int,
+                        help='total number of commands')
     parser.add_argument('-P', '--post_mortem', action='store_true',
                         help='enter debugger on uncaught exception')
+    parser.add_argument('-s', '--slice', default=0, type=int,
+                        help='slice 0-3')
     parser.add_argument('-v', '--verbosity', action='count', default=0,
                         help='increase output verbosity')
     return parser.parse_args()
+
+def rdm_check(rdm_cmpl, enqa):
+    if args.verbosity:
+        print('RDM cmpl: {}'.format(rdm_cmpl.enqa))
+    if enqa.enqa.payload[0:52] != rdm_cmpl.enqa.payload[0:52]:
+        runtime_err('FAIL: RDM: payload is {} and should be {}'.format(
+            rdm_cmpl.enqa.payload[0:52], enqa.enqa.payload[0:52]))
 
 def main():
     global args
     args = parse_args()
     if args.verbosity:
         print('pid={}'.format(os.getpid()))
-    modp = ModuleParams()
+
     with open(args.devfile, 'rb+', buffering=0) as f:
         conn = zhpe.Connection(f, args.verbosity)
+
         init = conn.do_INIT()
         gcid = init.uuid.gcid
         if args.verbosity:
             print('do_INIT: uuid={}, gcid={}'.format(
                 init.uuid, init.uuid.gcid_str))
-        zuu = init.uuid
-#        zuu = zuuid(gcid=gcid)
-#        conn.do_UUID_IMPORT(zuu, 0, None)
 
-        sz64K = 1 << 16
 
-        mm = mmap.mmap(-1, sz64K)
-        v, l = zhpe.mmap_vaddr_len(mm)
-        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)  # req: GET/PUT/GETREM/PUTREM,64K
-        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, sz64K, MR.GPGRPRIC)
-        rmm = mmap.mmap(f.fileno(), sz64K, offset=rsp_rmr.offset)
-        v_rmm, l_rmm = zhpe.mmap_vaddr_len(rmm)
+        smask = 1 << args.slice
+        smask |= 0x80
+        xdm = zhpe.XDM(conn, 256, 256, slice_mask=smask)
+        rdm = zhpe.RDM(conn, 1024, slice_mask=smask)
 
-        str1 = b'12345678'
+        enqa = zhpe.xdm_cmd()
+        enqa.opcode = zhpe.XDM_CMD.ENQA
+        enqa.enqa.dgcid = gcid
+        enqa.enqa.rspctxid = rdm.rsp_rqa.info.rspctxid
+        str1 = b'hello, world'
         len1 = len(str1)
-        off1 = 0
-        off1x = off1 ^ 0xFF00
+        enqa.enqa.payload[0:len1] = str1
+        enqa.enqa.payload[len1:52] = os.urandom(52 - len1)
 
-        mm[off1:off1+len1] = str1
         if args.verbosity:
-            print('mm (initial)="{}"'.format(mm[off1:off1+len1]))
-        mm[off1x:off1x+len1] = str1
-        if args.verbosity:
-            print('mm (initial)="{}"'.format(mm[off1x:off1x+len1]))
+            print("cmd: {}".format(enqa))
+
+        xdm.queue_cmd(enqa)
         if args.keyboard:
             set_trace()
-        zhpe.invalidate(v_rmm+off1, len1, True)
-        zhpe.invalidate(v_rmm+off1x, len1, True)
-        if mm[off1:off1+len1] != rmm[off1:off1+len1]:
-            runtime_err('Error: mm "{}" != rmm "{}"'.format(
-                mm[off1:off1+len1], rmm[off1:off1+len1]))
-        if mm[off1x:off1x+len1] != rmm[off1x:off1x+len1]:
-            runtime_err('Error: mm "{}" != rmm "{}"'.format(
-                mm[off1x:off1x+len1], rmm[off1x:off1x+len1]))
-
-        sys.exit(0)
-
-        str2 = b'abcdefgh'
-        len2 = len(str2)
-        off2 = off1 + len2
-        len1_2 = len1 + len2
-
-        # invalidate rmm to read fresh data
-        zhpe.invalidate(v_rmm+off1, len1, True)
+        try:
+            enqa_cmpl = xdm.get_cmpl()
+            if args.verbosity:
+                print('ENQA cmpl: {}'.format(enqa_cmpl))
+        except XDMcompletionError as e:
+            print('ENQA cmpl error: {} {:#x} request_id {:#x}'.format(
+                e, e.status, e.request_id))
+        if args.keyboard:
+            set_trace()
+        rdm_cmpls= rdm.get_poll(verbosity=args.verbosity)
         if args.verbosity:
-            print('rmm (remote)="{}"'.format(rmm[off1:off1+len1]))
-        if mm[off1:off1+len1] != rmm[off1:off1+len1]:
-            runtime_err('Error: mm "{}" != rmm "{}"'.format(
-                mm[off1:off1+len1], rmm[off1:off1+len1]))
-        rmm[off2:off2+len2] = str2
-        # commit rmm writes, so mm reads will see new data
-        zhpe.commit(v_rmm+off2, len2, True)
-        # invalidate mm reads to see new data.
-        zhpe.invalidate(v+off1, len1_2, True)
-        if args.verbosity:
-            print('mm after remote update="{}"'.format(
-                mm[off1:off1+len1_2]))
-        if mm[off1:off1+len1_2] != rmm[off1:off1+len1_2]:
-            runtime_err('Error: mm "{}" != rmm "{}"'.format(
-                mm[off1:off1+len1_2], rmm[off1:off1+len1_2]))
+            for c in range(len(rdm_cmpls)):
+                rdm_check(rdm_cmpls[c], enqa)
+        enqa.enqa.payload[len1:52] = os.urandom(52 - len1)
+        xdm.queue_cmd(enqa)
+        rdm_cmpl = rdm.get_cmpl()
+        rdm_check(rdm_cmpl, enqa)
 
-        rmm.close()
-        conn.do_RMR_FREE(zuu, rsp.rsp_zaddr, sz64K, MR.GPGRPRIC,
-                         rsp_rmr.req_addr)
-        conn.do_MR_FREE(v, l, MR.GPGRPRI, rsp.rsp_zaddr)
-        mm.close()
-        f.close()
     # end with
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
     try:
         main()
-    except Exception as post_err:
+    except:
         if args.post_mortem:
             post_mortem()
         else:
             raise
+

@@ -214,7 +214,7 @@ static void zmmu_req_pte_write(struct zhpe_rmr *rmr,
     pte.ctn = N;
     pte.rke = (rmr->rkey != 0);
     pte.rkey = rmr->rkey;
-    pte.v = valid;
+    pte.v = valid && (zhpe_platform != ZHPE_WILDCAT);
     ps = BIT_ULL(info->pg->page_grid.page_size);
     addr = info->addr_aligned;
 
