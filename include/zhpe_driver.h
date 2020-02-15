@@ -263,7 +263,7 @@ extern uint64_t zhpe_reqz_phy_cpuvisible_off;
 #define PFSLICE_XDM_QUEUES_PER_SLICE        (256)
 #define PFSLICE_RDM_QUEUES_PER_SLICE        (256)
 #define PFSLICE_REQZ_MIN_CPUVISIBLE_ADDR    (GB(0))
-#define PFSLICE_REQZ_MAX_CPUVISIBLE_ADDR    (TB(250) - 1)
+#define PFSLICE_REQZ_MAX_CPUVISIBLE_ADDR    (TB(192) - 1)
 
 /* Wildcat Hardware Platform */
 #define WILDCAT_REQ_ZMMU_ENTRIES            (128*1024)
@@ -271,7 +271,7 @@ extern uint64_t zhpe_reqz_phy_cpuvisible_off;
 #define WILDCAT_XDM_QUEUES_PER_SLICE        (256)
 #define WILDCAT_RDM_QUEUES_PER_SLICE        (256)
 #define WILDCAT_REQZ_MIN_CPUVISIBLE_ADDR    (GB(0))
-#define WILDCAT_REQZ_MAX_CPUVISIBLE_ADDR    (TB(250) - 1)
+#define WILDCAT_REQZ_MAX_CPUVISIBLE_ADDR    (TB(192) - 1)
 
 /* Platform values common to all platforms */
 #define ZHPE_MAX_XDM_QLEN                 (BIT(16)-1)
