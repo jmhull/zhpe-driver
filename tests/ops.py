@@ -107,14 +107,14 @@ def main():
             print('do_INIT: uuid={}, gcid={}'.format(
                 init.uuid, init.uuid.gcid_str))
 
-#        zuu = zuuid(gcid=gcid)
-#        conn.do_UUID_IMPORT(zuu, 0, None)
+        zuu = zuuid(gcid=gcid)
+        conn.do_UUID_IMPORT(zuu, 0, None)
 
         mm = mmap.mmap(-1, args.len * 2)
         v, l = zhpe.mmap_vaddr_len(mm)
-#        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)
+        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)
         mm[0:args.len] = os.urandom(args.len)  # fill with random bytes
-#        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, args.len * 2, MR.GRPRI)
+        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, args.len * 2, MR.GRPRI)
 
         if (args.xdmq_size & (args.xdmq_size - 1)) != 0:
             raise_err('-x option must specify a power of 2')
