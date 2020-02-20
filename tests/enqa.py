@@ -74,8 +74,10 @@ def parse_args():
                         help='total number of commands')
     parser.add_argument('-P', '--post_mortem', action='store_true',
                         help='enter debugger on uncaught exception')
-    parser.add_argument('-s', '--slice', default=0, type=int,
-                        help='slice 0-3')
+    parser.add_argument('-r', '--rslice', default=0, type=int,
+                        help='RDM slice 0-3')
+    parser.add_argument('-x', '--xslice', default=0, type=int,
+                        help='XDM slice 0-3')
     parser.add_argument('-v', '--verbosity', action='count', default=0,
                         help='increase output verbosity')
     return parser.parse_args()
@@ -103,10 +105,12 @@ def main():
                 init.uuid, init.uuid.gcid_str))
 
 
-        smask = 1 << args.slice
-        smask |= 0x80
-        xdm = zhpe.XDM(conn, 256, 256, slice_mask=smask)
-        rdm = zhpe.RDM(conn, 1024, slice_mask=smask)
+        xmask = 1 << args.xslice
+        xmask |= 0x80
+        xdm = zhpe.XDM(conn, 256, 256, slice_mask=xmask)
+        rmask = 1 << args.rslice
+        rmask |= 0x80
+        rdm = zhpe.RDM(conn, 1024, slice_mask=rmask)
 
         enqa = zhpe.xdm_cmd()
         enqa.opcode = zhpe.XDM_CMD.ENQA
