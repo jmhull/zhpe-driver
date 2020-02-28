@@ -1784,6 +1784,7 @@ static int zhpe_open(struct inode *inode, struct file *file)
 #define ZHPE_DVSEC_MBOX_DATAL_OFF (0x38)
 #define ZHPE_DVSEC_MBOX_DATAH_OFF (0x3C)
 #define ZHPE_DVSEC_SLINK_BASE_OFF (0x40)
+#define ZHPE_DVSEC_SLINK_BASE_MASK (0xFFFFF)
 
 /*
  * pfslice: LARK1.SLOT1.PFS0.SKWGPSHIMINBOUND0.SKW_SHIM_INB_CFG
@@ -2174,14 +2175,16 @@ static int zhpe_probe(struct pci_dev *pdev,
             ret = -ENODEV;
             goto err_out;
         }
-        if (zhpe_platform == ZHPE_WILDCAT && !slink_base)
-            slink_base = 0x400;
+
         dev_info(&pdev->dev, "%s,%u,%d:pslice = %d, vslice = %d slink = 0x%x\n",
                  __func__, __LINE__, task_pid_nr(current),
                  pslice_id, vslice_id, slink_base);
 
         /* Base is in GiB */
         if (slink_base) {
+            if (zhpe_platform == ZHPE_WILDCAT)
+                slink_base &= ZHPE_DVSEC_SLINK_BASE_MASK;
+
             if (!zhpe_reqz_phy_cpuvisible_off) {
                 zhpe_reqz_phy_cpuvisible_off = (uint64_t)slink_base << 30;
                 debug(DEBUG_PCI, "phy_cpuvisible_off 0x%llx\n",
