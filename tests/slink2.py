@@ -94,28 +94,39 @@ def main():
         zuu = zuuid(gcid=gcid)
         conn.do_UUID_IMPORT(zuu, 0, None)
 
-        sz4K = 4096
+        sz8K = 8192
 
-        mm = mmap.mmap(-1, sz4K)
+        mm = mmap.mmap(-1, sz8K)
         v, l = zhpe.mmap_vaddr_len(mm)
-        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)  # req: GET/PUT/GETREM/PUTREM, 4K
-        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, sz4K, MR.GPGRPRIC)
-        rmm = mmap.mmap(f.fileno(), sz4K, offset=rsp_rmr.offset)
+        rsp = conn.do_MR_REG(v, l, MR.GPGRPRI)  # req: GET/PUT/GETREM/PUTREM, 8K
+        rsp_rmr = conn.do_RMR_IMPORT(zuu, rsp.rsp_zaddr, sz8K, MR.GPGRPRIC)
+        rmm = mmap.mmap(f.fileno(), sz8K, offset=rsp_rmr.offset)
         v_rmm, l_rmm = zhpe.mmap_vaddr_len(rmm)
 
         str1 = b'12345678'
         len1 = len(str1)
-        off1 = 0x9A0
+        off1 = 0
         str2 = b'abcdefgh'
         len2 = len(str2)
         off2 = off1 + len1
-        len1_2 = len1 + len2
+        len_1_2 = len1 + len2
+
+        str3 = b'ijklmnop'
+        len3 = len(str3)
+        off3 = sz8K / 2
+        str4 = b'qrstuvwx'
+        len4 = len(str4)
+        off4 = off3 + len3
+        len_3_4 = len3 + len4
 
         mm[off1:off1+len1] = str1
+        mm[off3:off3+len3] = str3
         if args.verbosity:
             print('mm (initial)="{}"'.format(mm[off1:off1+len1]))
+            print('mm (initial)="{}"'.format(mm[off3:off3+len3]))
         if args.keyboard:
             set_trace()
+
         # invalidate rmm to read fresh data
         zhpe.invalidate(v_rmm+off1, len1, True)
         if args.verbosity:
@@ -123,20 +134,36 @@ def main():
         if mm[off1:off1+len1] != rmm[off1:off1+len1]:
             runtime_err('Error: mm "{}" != rmm "{}"'.format(
                 mm[off1:off1+len1], rmm[off1:off1+len1]))
+        zhpe.invalidate(v_rmm+off3, len3, True)
+        if args.verbosity:
+            print('rmm (remote)="{}"'.format(rmm[off3:off3+len3]))
+        if mm[off3:off3+len3] != rmm[off3:off3+len3]:
+            runtime_err('Error: mm "{}" != rmm "{}"'.format(
+                mm[off3:off3+len3], rmm[off3:off3+len3]))
+
         rmm[off2:off2+len2] = str2
+        rmm[off4:off4+len4] = str4
         # commit rmm writes, so mm reads will see new data
         zhpe.commit(v_rmm+off2, len2, True)
+        zhpe.commit(v_rmm+off4, len4, True)
+
         # invalidate mm reads to see new data.
         zhpe.invalidate(v+off1, len1_2, True)
+        zhpe.invalidate(v+off3, len3_4, True)
         if args.verbosity:
             print('mm after remote update="{}"'.format(
                 mm[off1:off1+len1_2]))
+            print('mm after remote update="{}"'.format(
+                mm[off3:off3+len3_4]))
         if mm[off1:off1+len1_2] != rmm[off1:off1+len1_2]:
             runtime_err('Error: mm "{}" != rmm "{}"'.format(
                 mm[off1:off1+len1_2], rmm[off1:off1+len1_2]))
+        if mm[off3:off3+len3_4] != rmm[off3:off3+len3_4]:
+            runtime_err('Error: mm "{}" != rmm "{}"'.format(
+                mm[off3:off3+len3_4], rmm[off3:off3+len3_4]))
 
         rmm.close()
-        conn.do_RMR_FREE(zuu, rsp.rsp_zaddr, sz4K, MR.GPGRPRIC,
+        conn.do_RMR_FREE(zuu, rsp.rsp_zaddr, sz8K, MR.GPGRPRIC,
                          rsp_rmr.req_addr)
         conn.do_MR_FREE(v, l, MR.GPGRPRI, rsp.rsp_zaddr)
         mm.close()
