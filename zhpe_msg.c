@@ -340,9 +340,12 @@ static inline int msg_send_cmd(struct xdm_info *xdmi,
     struct bridge *br;
     struct rdm_info *rdmi;
 
-    /* fill in cmd */
+    br = xdmi->br;
     size = min(sizeof(*msg), sizeof(cmd.enqa.payload));
-    if (dgcid != genz_gcid) {
+    debug(DEBUG_MSG, "self check 0x%x 0x%x\n", dgcid, br->gcid);
+
+    if (dgcid != br->gcid) {
+        /* fill in cmd */
         cmd.hdr.opcode = ZHPE_HW_OPCODE_ENQA;
         cmd.enqa.dgcid = dgcid;
         cmd.enqa.rspctxid = rspctxid;
@@ -360,7 +363,6 @@ static inline int msg_send_cmd(struct xdm_info *xdmi,
     self_entry->rdm_entry.hdr.sgcid = dgcid;
     self_entry->rdm_entry.hdr.reqctxid = xdmi->reqctxid;
     memcpy(&self_entry->rdm_entry.payload, msg, size);
-    br = xdmi->br;
     rdmi = &br->msg_rdm;
     spin_lock(&rdmi->rdm_info_lock);
     if (self_head)

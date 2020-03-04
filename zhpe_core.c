@@ -1653,11 +1653,6 @@ static int zhpe_open(struct inode *inode, struct file *file)
                     zhpe_driver_name, __func__, br->num_slices,
                     br->expected_slices);
     }
-    if (!SLICE_VALID(&br->slice[0])) {
-        ret = -ENODEV;
-        printk_once(KERN_ERR "%s:%s:slice zero must be valid\n",
-                    zhpe_driver_name, __func__);
-    }
     if (br->probe_error < 0) {
         ret = -ENODEV;
         printk_once(KERN_ERR "%s:%s:error during probe\n",
@@ -1793,28 +1788,50 @@ static int zhpe_open(struct inode *inode, struct file *file)
  * slice 1: x = 0, y = 1
  * slice 2: x = 1, y = 0
  * slice 3: x = 1, y = 1
- * At the moment, the rules for slices to register on slice seem to be:
- * reg + ((pslice >> 1) + 1) * 0x800000 + (pslice & 1) * 0x1000
+ * At the moment:
+ * block_off +  chip_id * 0x800000 + block * block_size
+ * OZS0: chip_id 0
+ * SKW0: chip_id 1
+ * SKW1: chip_id 2
  */
+
+struct zhpe_csr_block {
+    uint16_t            block_size;
+    uint8_t             blocks;
+    uint8_t             chip_mask;
+};
 
 struct zhpe_csr {
     uint32_t            pfs;
     uint32_t            asic;
-    bool                ozs;
+    const struct zhpe_csr_block *block;
+};
+
+/* OZS registers. */
+
+static const struct zhpe_csr_block ozs_block = {
+    .blocks             = 0x1U,
+    .chip_mask          = 0x1U,
 };
 
 /* 16-bit SID at bit 0, if reg_24 SID_VALID flag set. */
 static struct zhpe_csr ozs_core_reg_23 = {
-    .pfs                = 0xB8U,
-    .asic               = 0xB8U,
-    .ozs                = true,
+    .pfs                = 0x40000B8U,
+    .asic               = 0x40000B8U,
+    .block              = &ozs_block,
 };
 
 /* 12-bit CID at bit 8. CID0 should always be valid, but we'll check anyway.  */
 static struct zhpe_csr ozs_core_reg_24 = {
-    .pfs                = 0xC0U,
-    .asic               = 0xC0U,
-    .ozs                = true,
+    .pfs                = 0x40000C0U,
+    .asic               = 0x40000C0U,
+    .block              = &ozs_block,
+};
+
+static const struct zhpe_csr_block skw_shim_inb_block = {
+    .block_size         = 0x1000U,
+    .blocks             = 0x2U,
+    .chip_mask          = 0x6U,
 };
 
 #define OZS_CORE_REG_24_CID0_VALID      (0x01)
@@ -1822,81 +1839,94 @@ static struct zhpe_csr ozs_core_reg_24 = {
 #define OZS_CORE_REG_24_SID_VALID       (0x80)
 
 static struct zhpe_csr skw_shim_inb_cfg = {
-    .pfs                = 0x73A908U,
-    .asic               = 0x7BA908U,
+    .pfs                = 0x073A908U,
+    .asic               = 0x07BA908U,
+    .block              = &skw_shim_inb_block,
+};
+
+static const struct zhpe_csr_block xdm_block = {
+    .block_size         = 0x1000U,
+    .blocks             = 0x2U,
+    .chip_mask          = 0x6U,
 };
 
 static struct zhpe_csr xdm_err_all_status = {
-    .pfs                = 0x705088U,
-    .asic               = 0x730088U,
+    .pfs                = 0x0705088U,
+    .asic               = 0x0730088U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_pri_status = {
-    .pfs                = 0x705080U,
-    .asic               = 0x730080U,
+    .pfs                = 0x0705080U,
+    .asic               = 0x0730080U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwa_all_status = {
-    .pfs                = 0x705820U,
-    .asic               = 0x730820U,
+    .pfs                = 0x0705820U,
+    .asic               = 0x0730820U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwa_pri_status = {
-    .pfs                = 0x705818U,
-    .asic               = 0x730818U,
+    .pfs                = 0x0705818U,
+    .asic               = 0x0730818U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwe_all_status = {
-    .pfs                = 0x705808U,
-    .asic               = 0x730808U,
+    .pfs                = 0x0705808U,
+    .asic               = 0x0730808U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwe_pri_status = {
-    .pfs                = 0x705800U,
-    .asic               = 0x730800U,
+    .pfs                = 0x0705800U,
+    .asic               = 0x0730800U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_size_cfg0 = {
-    .pfs                = 0x705210U,
-    .asic               = 0x730210U,
+    .pfs                = 0x0705210U,
+    .asic               = 0x0730210U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_priority_cfg0 = {
-    .pfs                = 0x705228U,
-    .asic               = 0x730228U,
+    .pfs                = 0x0705228U,
+    .asic               = 0x0730228U,
+    .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_priority_cfg1 = {
-    .pfs                = 0x705230U,
-    .asic               = 0x730230U,
+    .pfs                = 0x0705230U,
+    .asic               = 0x0730230U,
+    .block              = &xdm_block,
 };
 
-static uint32_t asic_slice_to_off(uint32_t pslice_id)
-{
-    return ((pslice_id >> 1) + 1) * 0x800000 + (pslice_id & 1) * 0x1000;
-}
-
 static int csr_access(struct slice *sl, struct zhpe_csr *zcsr,
+                      uint chip_id, uint blocknum,
                       uint64_t *data, bool read)
 {
     int                 ret = -EIO;
     uint32_t            off = 0;
     int                 pos;
     uint32_t            val;
-    int                 i;
     uint32_t            cmd;
     uint32_t            csr;
+    uint                i;
 
     switch (zhpe_platform) {
 
     case ZHPE_PFSLICE:
         csr = zcsr->pfs;
+        if (blocknum > 0)
+            return 0;
         break;
 
     case ZHPE_WILDCAT:
         csr = zcsr->asic;
-        if (!zcsr->ozs)
-            off = asic_slice_to_off(sl->phys_id);
+        off = chip_id * 0x800000U + blocknum * zcsr->block->block_size;
         break;
 
     default:
@@ -1955,41 +1985,40 @@ out:
 }
 
 static int csr_access_rd(struct slice *sl, struct zhpe_csr *zcsr,
-                         uint64_t *data)
+                         uint chip_id, uint blocknum, uint64_t *data)
 {
-    return csr_access(sl, zcsr, data, true);
+    return csr_access(sl, zcsr, chip_id, blocknum, data, true);
 }
 
 static int csr_access_wr(struct slice *sl, struct zhpe_csr *zcsr,
-                         uint64_t data)
+                         uint chip_id, uint blocknum, uint64_t data)
 {
-    return csr_access(sl, zcsr, &data, false);
+    return csr_access(sl, zcsr, chip_id, blocknum, &data, false);
 }
 
 static int csr_access_rdwr(struct slice *sl, struct zhpe_csr *zcsr,
-                           uint64_t data)
+                           uint chip_id, uint blocknum,
+                           uint64_t mask, uint64_t data)
 {
     int                 ret;
-    uint64_t            dummy;
+    uint64_t            orig;
 
     /* Read the current value to get it logged. */
-    ret = csr_access_rd(sl, zcsr, &dummy);
+    ret = csr_access_rd(sl, zcsr, chip_id, blocknum, &orig);
     if (!ret)
-        ret = csr_access_wr(sl, zcsr, data);
+        ret = csr_access_wr(sl, zcsr, chip_id, blocknum,
+                            (orig & mask) | (data & ~mask));
 
     return ret;
 }
 
-
-static int csr_get_gcid(struct bridge *br, struct slice *sl)
+static int csr_get_gcid(struct slice *sl, uint32_t *gcid)
 {
     int                 ret = 0;
     uint64_t            sid = 0;
     uint64_t            cid;
 
-    if (br->gcid != INVALID_GCID)
-        goto out;
-    ret = csr_access_rd(sl, &ozs_core_reg_24, &cid);
+    ret = csr_access_rd(sl, &ozs_core_reg_24, 0, 0, &cid);
     if (ret < 0)
         goto out;
     if (!(cid & OZS_CORE_REG_24_CID0_VALID)) {
@@ -1998,109 +2027,166 @@ static int csr_get_gcid(struct bridge *br, struct slice *sl)
     }
 
     if (cid & OZS_CORE_REG_24_SID_VALID) {
-        ret = csr_access_rd(sl, &ozs_core_reg_23, &sid);
+        ret = csr_access_rd(sl, &ozs_core_reg_23, 0, 0, &sid);
         if (ret < 0)
             goto out;
         sid = (sid & ZHPE_GCID_SID_MASK) << ZHPE_GCID_SID_SHIFT;
     }
 
     cid = (cid >> OZS_CORE_REG_24_CID0_SHIFT) & ZHPE_GCID_CID_MASK;
-    br->gcid = cid | sid;
+    *gcid = cid | sid;
 
 out:
     return 0;
 }
 
-static int csr_set_inb_cfg(struct bridge *br, struct slice *sl)
+static int csr_set_inb_cfg(struct slice *sl, uint chip_id)
 {
     int                 ret;
     uint64_t            cfg;
+    uint                blk;
 
-    ret = csr_access_rd(sl, &skw_shim_inb_cfg, &cfg);
-    if (ret < 0)
-        goto out;
-    cfg &= skw_shim_inb_cfg_mask;
-    cfg |= skw_shim_inb_cfg_bits;
-    ret = csr_access_wr(sl, &skw_shim_inb_cfg, cfg);
-    if (ret < 0)
-        goto out;
+    for (blk = 0; blk < skw_shim_inb_block.blocks; blk++) {
+        ret = csr_access_rd(sl, &skw_shim_inb_cfg, chip_id, blk, &cfg);
+        if (ret < 0)
+            goto out;
+        cfg &= skw_shim_inb_cfg_mask;
+        cfg |= skw_shim_inb_cfg_bits;
+        ret = csr_access_wr(sl, &skw_shim_inb_cfg, chip_id, blk, cfg);
+        if (ret < 0)
+            goto out;
+    }
     ret = 0;
 
  out:
-    return 0;
+    return ret;
 }
 
-static int csr_set_xdm_prio(struct bridge *br, struct slice *sl)
+static int csr_set_xdm_prio(struct slice *sl, uint chip_id)
 {
     int                 ret;
     uint64_t            cfg;
+    uint                blk;
 
-    ret = csr_access_rd(sl, &xdm_size_cfg0, &cfg);
-    if (ret < 0)
-        goto out;
-    cfg &= xdm_size_cfg0_mask;
-    cfg |= xdm_size_cfg0_bits;
-    ret = csr_access_wr(sl, &xdm_size_cfg0, cfg);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rd(sl,&xdm_priority_cfg0, &cfg);
-    if (ret < 0)
-        goto out;
-    cfg &= xdm_priority_cfg0_mask;
-    cfg |= xdm_priority_cfg0_bits;
-    ret = csr_access_wr(sl, &xdm_priority_cfg0, cfg);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rd(sl, &xdm_priority_cfg1, &cfg);
-    if (ret < 0)
-        goto out;
-    cfg &= xdm_priority_cfg1_mask;
-    cfg |= xdm_priority_cfg1_bits;
-    ret = csr_access_wr(sl, &xdm_priority_cfg1, cfg);
-    if (ret < 0)
-        goto out;
+    for (blk = 0; blk < xdm_block.blocks; blk++) {
+        ret = csr_access_rd(sl, &xdm_size_cfg0, chip_id, blk, &cfg);
+        if (ret < 0)
+            goto out;
+        cfg &= xdm_size_cfg0_mask;
+        cfg |= xdm_size_cfg0_bits;
+        ret = csr_access_wr(sl, &xdm_size_cfg0, chip_id, blk, cfg);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rd(sl,&xdm_priority_cfg0, chip_id, blk, &cfg);
+        if (ret < 0)
+            goto out;
+        cfg &= xdm_priority_cfg0_mask;
+        cfg |= xdm_priority_cfg0_bits;
+        ret = csr_access_wr(sl, &xdm_priority_cfg0, chip_id, blk, cfg);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rd(sl, &xdm_priority_cfg1, chip_id, blk, &cfg);
+        if (ret < 0)
+            goto out;
+        cfg &= xdm_priority_cfg1_mask;
+        cfg |= xdm_priority_cfg1_bits;
+        ret = csr_access_wr(sl, &xdm_priority_cfg1, chip_id, blk, cfg);
+        if (ret < 0)
+            goto out;
+    }
     ret = 0;
 
  out:
-    return 0;
+    return ret;
 }
 
-static int csr_reset_logs(struct bridge *br, struct slice *sl)
+static int csr_reset_logs(struct slice *sl, uint chip_id)
 {
     int                 ret = 0;
     uint64_t            val;
+    uint                blk;
 
-    ret = csr_access_rdwr(sl, &xdm_err_hwa_all_status, 0x1);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rdwr(sl, &xdm_err_hwa_pri_status, 0x1);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rdwr(sl, &xdm_err_hwe_all_status, 0x1);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rdwr(sl, &xdm_err_hwe_pri_status, 0x1);
-    if (ret < 0)
-        goto out;
+    for (blk = 0; blk < xdm_block.blocks; blk++) {
+        ret = csr_access_rdwr(sl, &xdm_err_hwa_all_status, chip_id, blk,
+                              0, 0x1);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rdwr(sl, &xdm_err_hwa_pri_status, chip_id, blk,
+                              0, 0x1);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rdwr(sl, &xdm_err_hwe_all_status, chip_id, blk,
+                              0, 0x1);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rdwr(sl, &xdm_err_hwe_pri_status, chip_id, blk,
+                              0, 0x1);
+        if (ret < 0)
+            goto out;
 
-    ret = csr_access_rdwr(sl, &xdm_err_all_status, 0xC);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rdwr(sl, &xdm_err_pri_status, 0xC);
-    if (ret < 0)
-        goto out;
-    /* Read things back to get them in the log. */
-    ret = csr_access_rd(sl, &xdm_err_all_status, &val);
-    if (ret < 0)
-        goto out;
-    ret = csr_access_rd(sl, &xdm_err_pri_status, &val);
-    if (ret < 0)
-        goto out;
+        ret = csr_access_rdwr(sl, &xdm_err_all_status, chip_id, blk,
+                              0, 0xC);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rdwr(sl, &xdm_err_pri_status, chip_id, blk,
+                              0, 0xC);
+        if (ret < 0)
+            goto out;
+        /* Read things back to get them in the log. */
+        ret = csr_access_rd(sl, &xdm_err_all_status, chip_id, blk, &val);
+        if (ret < 0)
+            goto out;
+        ret = csr_access_rd(sl, &xdm_err_pri_status, chip_id, blk, &val);
+        if (ret < 0)
+            goto out;
+    }
     ret = 0;
 
  out:
-    return 0;
+    return ret;
 }
+
+static int probe_setup_csrs(struct bridge *br)
+{
+    int                 ret = 0;
+    uint                chip_mask = 0;
+    uint                chip_id;
+    uint                i;
+    struct slice        *sl = NULL;
+
+    for (i = 0; i < SLICES; i++) {
+        if (SLICE_VALID(&br->slice[i])) {
+            chip_mask |= (1U << (i / 2 + 1));
+            if (!sl)
+                sl = &br->slice[i];
+        }
+    }
+    for (chip_id = 1; chip_id < 3; chip_id++) {
+        if (!(chip_mask & (1U << chip_id)))
+            continue;
+        /* OZS (chip 0) can only be access via mailbox on chip 1 */
+        if (chip_id == 1) {
+            if (zhpe_platform != ZHPE_CARBON) {
+                ret = csr_get_gcid(sl, &br->gcid);
+                if (ret < 0)
+                    goto out;
+            }
+        }
+        ret = csr_set_inb_cfg(sl, chip_id);
+        if (ret < 0)
+            goto out;
+        ret = csr_set_xdm_prio(sl, chip_id);
+        if (ret < 0)
+            goto out;
+        ret = csr_reset_logs(sl, chip_id);
+        if (ret < 0)
+            goto out;
+    }
+
+ out:
+    return ret;
+}
+
 
 static int zhpe_probe(struct pci_dev *pdev,
                       const struct pci_device_id *pdev_id)
@@ -2296,33 +2382,6 @@ static int zhpe_probe(struct pci_dev *pdev,
         goto err_iommu_free;
     }
 
-    if (zhpe_platform != ZHPE_CARBON) {
-        if (sl->id == 0) {
-            ret = csr_get_gcid(br, sl);
-            if (ret < 0)
-                goto err_iommu_free;
-        }
-        ret = csr_set_inb_cfg(br, sl);
-        if (ret < 0)
-            goto err_iommu_free;
-        ret = csr_set_xdm_prio(br, sl);
-        if (ret < 0)
-            goto err_iommu_free;
-        ret = csr_reset_logs(br, sl);
-        if (ret < 0)
-            goto err_iommu_free;
-    } else if (genz_gcid == INVALID_GCID) {
-        dev_warn(&pdev->dev, "%s,%u,%d:genz_gcid not set\n",
-                 __func__, __LINE__, task_pid_nr(current));
-        ret = -EINVAL;
-        goto err_iommu_free;
-    } else
-        br->gcid = genz_gcid;
-
-    if (br->num_slices == 1)
-        dev_info(&pdev->dev, "%s,%u,%d:gcid = 0x%07x\n",
-                 __func__, __LINE__, task_pid_nr(current), br->gcid);
-
     if (sl->id == 0) {
         /* allocate driver-driver msg queues on slice 0 only */
         ret = zhpe_msg_qalloc(br);
@@ -2331,6 +2390,27 @@ static int zhpe_probe(struct pci_dev *pdev,
             goto err_free_interrupts;
         }
     }
+
+    if (br->num_slices == br->expected_slices) {
+        ret = probe_setup_csrs(br);
+        if (ret < 0)
+            goto err_free_interrupts;
+
+        if (br->gcid == INVALID_GCID) {
+            if (genz_gcid == INVALID_GCID) {
+                dev_warn(&pdev->dev, "%s,%u,%d:no valid gcid available\n",
+                         __func__, __LINE__, task_pid_nr(current));
+                ret = -EINVAL;
+                goto err_free_interrupts;
+            }
+            dev_info(&pdev->dev, "%s,%u,%d:using genz_gcid = 0x%07x\n",
+                     __func__, __LINE__, task_pid_nr(current), genz_gcid);
+            br->gcid = genz_gcid;
+        } else
+            dev_info(&pdev->dev, "%s,%u,%d:gcid = 0x%07x\n",
+                     __func__, __LINE__, task_pid_nr(current), br->gcid);
+    }
+
     pci_set_master(pdev);
     dev_info(&pdev->dev, "%s:successful\n", __func__);
 
