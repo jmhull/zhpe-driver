@@ -199,7 +199,7 @@ MODULE_PARM_DESC(no_iommu, "System does not have an IOMMU (default=0)");
 /* Revisit Carbon: Gen-Z Global CID should come from bridge Core
  * Structure, but for now, it's a module parameter
  */
-static uint genz_gcid = INVALID_GCID;
+uint genz_gcid = INVALID_GCID;
 module_param(genz_gcid, uint, S_IRUGO);
 MODULE_PARM_DESC(genz_gcid, "Gen-Z bridge global CID");
 

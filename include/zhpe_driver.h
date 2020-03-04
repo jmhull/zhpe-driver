@@ -50,6 +50,7 @@ extern const char zhpe_driver_name[];
 extern uint no_iommu;
 extern struct zhpe_global_shared_data *global_shared_data;
 extern bool zhpe_mcommit;
+extern uint genz_gcid;
 
 #define zprintk_caller(_lvl, _callf, _line, _fmt, ...)                  \
     printk(_lvl "%s:%s,%u,%d: " _fmt,                                   \
@@ -387,6 +388,7 @@ struct xdm_info {
     struct xdm_qcm *hw_qcm_addr;
     union zpages   *cmdq_zpage, *cmplq_zpage;
     int            slice, queue;
+    uint32_t       reqctxid;
     uint           cmdq_tail_shadow, cmdq_head_shadow; /* shadow of HW reg */
     uint           cmplq_tail_shadow;                  /* shadow of HW reg */
     uint           cmplq_head;                         /* SW-only */

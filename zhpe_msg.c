@@ -44,6 +44,14 @@ static struct rb_root msg_rbtree = RB_ROOT;
 DEFINE_SPINLOCK(zhpe_msg_rbtree_lock);
 static atomic_t msgid = ATOMIC_INIT(0);
 
+struct msg_self_entry {
+    struct msg_self_entry *next;
+    struct zhpe_rdm_entry rdm_entry;
+};
+
+static struct msg_self_entry *self_head;
+static struct msg_self_entry *self_tail;
+
 static inline ktime_t get_timeout(void)
 {
     return ktime_set((zhpe_kmsg_timeout > 0 ? zhpe_kmsg_timeout : 2), 0);
@@ -259,6 +267,7 @@ static int msg_rdm_get_cmpl(struct rdm_info *rdmi, struct zhpe_rdm_hdr *hdr,
     uint head, next_head;
     struct zhpe_rdm_entry *rdm_entry, *next_entry;
     void *cpu_addr;
+    struct msg_self_entry *self_entry;
 
     spin_lock(&rdmi->rdm_info_lock);
     head = rdmi->cmplq_head_shadow;
@@ -267,6 +276,15 @@ static int msg_rdm_get_cmpl(struct rdm_info *rdmi, struct zhpe_rdm_hdr *hdr,
 
     /* check valid bit */
     if (rdm_entry->hdr.valid != rdmi->cur_valid) {
+        if ((self_entry = self_head)) {
+            self_head = self_entry->next;
+            ret = !!self_head;
+            rdm_entry = &self_entry->rdm_entry;
+            *hdr = rdm_entry->hdr;
+            memcpy(msg, &rdm_entry->payload, sizeof(*msg));
+            do_kfree(self_entry);
+            goto out;
+        }
         ret = -EBUSY;
         goto out;
     }
@@ -318,15 +336,43 @@ static inline int msg_send_cmd(struct xdm_info *xdmi,
 {
     union zhpe_hw_wq_entry cmd = { 0 };
     size_t size;
+    struct msg_self_entry *self_entry;
+    struct bridge *br;
+    struct rdm_info *rdmi;
 
     /* fill in cmd */
-    cmd.hdr.opcode = ZHPE_HW_OPCODE_ENQA;
-    cmd.enqa.dgcid = dgcid;
-    cmd.enqa.rspctxid = rspctxid;
     size = min(sizeof(*msg), sizeof(cmd.enqa.payload));
-    memcpy(&cmd.enqa.payload, msg, size);
-    /* send cmd */
-    return msg_xdm_queue_cmd(xdmi, &cmd);
+    if (dgcid != genz_gcid) {
+        cmd.hdr.opcode = ZHPE_HW_OPCODE_ENQA;
+        cmd.enqa.dgcid = dgcid;
+        cmd.enqa.rspctxid = rspctxid;
+        memcpy(&cmd.enqa.payload, msg, size);
+        /* send cmd */
+        return msg_xdm_queue_cmd(xdmi, &cmd);
+    }
+
+    /* Skip the XDM-RDM queue for messages to ourselves. */
+    self_entry = do_kmalloc(sizeof(*self_entry), GFP_KERNEL, false);
+    if (!self_entry)
+        return -ENOMEM;
+
+    self_entry->next = NULL;
+    self_entry->rdm_entry.hdr.sgcid = dgcid;
+    self_entry->rdm_entry.hdr.reqctxid = xdmi->reqctxid;
+    memcpy(&self_entry->rdm_entry.payload, msg, size);
+    br = xdmi->br;
+    rdmi = &br->msg_rdm;
+    spin_lock(&rdmi->rdm_info_lock);
+    if (self_head)
+        self_tail->next = self_entry;
+    else
+        self_head = self_entry;
+    self_tail = self_entry;
+    spin_unlock(&rdmi->rdm_info_lock);
+
+    schedule_work(&br->msg_work);
+
+    return 0;
 }
 
 static int msg_insert_send_cmd(struct xdm_info *xdmi,
