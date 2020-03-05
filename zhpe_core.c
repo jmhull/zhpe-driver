@@ -97,9 +97,11 @@ static ulong skw_shim_inb_cfg_mask      = ~0x000000000000000FUL;
 static ulong skw_shim_inb_cfg_bits      =  0x0000000000000009UL;
 
 module_param(skw_shim_inb_cfg_mask, ulong, 0444);
-MODULE_PARM_DESC(skw_shim_inb_cfg_mask, "new = (current & mask) | bits");
+MODULE_PARM_DESC(skw_shim_inb_cfg_mask,
+                 "new = (current & mask) | (bits & ~mask)");
 module_param(skw_shim_inb_cfg_bits, ulong, 0444);
-MODULE_PARM_DESC(skw_shim_inb_cfg_bits, "new = (current & mask) | bits");
+MODULE_PARM_DESC(skw_shim_inb_cfg_bits,
+                 "new = (current & mask) | (bits & ~mask)");
 
 /*
  * Queue priority settings:
@@ -121,19 +123,23 @@ static ulong xdm_priority_cfg1_mask     = ~0x001F1FFF00000000UL;
 static ulong xdm_priority_cfg1_bits     =  0x000000C700000000UL;
 
 module_param(xdm_size_cfg0_mask, ulong, 0444);
-MODULE_PARM_DESC(xdm_size_cfg0_mask, "new = (current & mask) | bits");
+MODULE_PARM_DESC(xdm_size_cfg0_mask, "new = (current & mask) | (bits & ~mask)");
 module_param(xdm_size_cfg0_bits, ulong, 0444);
-MODULE_PARM_DESC(xdm_size_cfg0_bits, "new = (current & mask) | bits");
+MODULE_PARM_DESC(xdm_size_cfg0_bits, "new = (current & mask) | (bits & ~mask)");
 
 module_param(xdm_priority_cfg0_mask, ulong, 0444);
-MODULE_PARM_DESC(xdm_priority_cfg0_mask, "new = (current & mask) | bits");
+MODULE_PARM_DESC(xdm_priority_cfg0_mask,
+                 "new = (current & mask) | (bits & ~mask)");
 module_param(xdm_priority_cfg0_bits, ulong, 0444);
-MODULE_PARM_DESC(xdm_priority_cfg0_bits, "new = (current & mask) | bits");
+MODULE_PARM_DESC(xdm_priority_cfg0_bits,
+                 "new = (current & mask) | (bits & ~mask)");
 
 module_param(xdm_priority_cfg1_mask, ulong, 0444);
-MODULE_PARM_DESC(xdm_priority_cfg1_mask, "new = (current & mask) | bits");
+MODULE_PARM_DESC(xdm_priority_cfg1_mask,
+                 "new = (current & mask) | (bits & ~mask)");
 module_param(xdm_priority_cfg1_bits, ulong, 0444);
-MODULE_PARM_DESC(xdm_priority_cfg1_bits, "new = (current & mask) | bits");
+MODULE_PARM_DESC(xdm_priority_cfg1_bits,
+                 "new = (current & mask) | (bits & ~mask)");
 
 const char zhpe_driver_name[] = DRIVER_NAME;
 
@@ -1784,54 +1790,55 @@ static int zhpe_open(struct inode *inode, struct file *file)
  * pfslice: LARK1.SLOT1.PFS0.SKWGPSHIMINBOUND0.SKW_SHIM_INB_CFG
  * wildcat:
  * CHASSIS1.SEAHAWK1.WILDCAT0.SKYWAYx.SKWGPSHIMINBOUNDy.SKW_SHIM_INB_CFG
- * slice 0: x = 0, y = 0
- * slice 1: x = 0, y = 1
- * slice 2: x = 1, y = 0
- * slice 3: x = 1, y = 1
+ * slice 0: x = 0
+ * slice 1: x = 0
+ * slice 2: x = 1
+ * slice 3: x = 1
  * At the moment:
- * block_off +  chip_id * 0x800000 + block * block_size
+ * block_off +  chip_id * 0x800000 + y * block_size
  * OZS0: chip_id 0
  * SKW0: chip_id 1
  * SKW1: chip_id 2
  */
 
+enum {
+    CHIP_ID_OZS0,
+    CHIP_ID_SKW0,
+    CHIP_ID_SKW1,
+    CHIP_ID_PFS0 = 0,
+};
+
 struct zhpe_csr_block {
     uint16_t            block_size;
-    uint8_t             blocks;
-    uint8_t             chip_mask;
+    uint8_t             blocks[2];      /* PFS, Wildcat */
 };
 
 struct zhpe_csr {
-    uint32_t            pfs;
-    uint32_t            asic;
+    uint32_t            addr[2];        /* PFS, Wildcat */
     const struct zhpe_csr_block *block;
 };
 
 /* OZS registers. */
 
-static const struct zhpe_csr_block ozs_block = {
-    .blocks             = 0x1U,
-    .chip_mask          = 0x1U,
+static const struct zhpe_csr_block ozs_core_block = {
+    .blocks             = { 1, 1 },
 };
 
 /* 16-bit SID at bit 0, if reg_24 SID_VALID flag set. */
 static struct zhpe_csr ozs_core_reg_23 = {
-    .pfs                = 0x40000B8U,
-    .asic               = 0x40000B8U,
-    .block              = &ozs_block,
+    .addr               = { 0x40000B8, 0x40000B8 },
+    .block              = &ozs_core_block,
 };
 
 /* 12-bit CID at bit 8. CID0 should always be valid, but we'll check anyway.  */
 static struct zhpe_csr ozs_core_reg_24 = {
-    .pfs                = 0x40000C0U,
-    .asic               = 0x40000C0U,
-    .block              = &ozs_block,
+    .addr               = { 0x40000C0, 0x40000C0 },
+    .block              = &ozs_core_block,
 };
 
 static const struct zhpe_csr_block skw_shim_inb_block = {
-    .block_size         = 0x1000U,
-    .blocks             = 0x2U,
-    .chip_mask          = 0x6U,
+    .block_size         = 0x1000,
+    .blocks             = { 1, 2 },
 };
 
 #define OZS_CORE_REG_24_CID0_VALID      (0x01)
@@ -1839,76 +1846,65 @@ static const struct zhpe_csr_block skw_shim_inb_block = {
 #define OZS_CORE_REG_24_SID_VALID       (0x80)
 
 static struct zhpe_csr skw_shim_inb_cfg = {
-    .pfs                = 0x073A908U,
-    .asic               = 0x07BA908U,
+    .addr               = { 0x073A908, 0x07BA908 },
     .block              = &skw_shim_inb_block,
 };
 
 static const struct zhpe_csr_block xdm_block = {
-    .block_size         = 0x1000U,
-    .blocks             = 0x2U,
-    .chip_mask          = 0x6U,
+    .block_size         = 0x1000,
+    .blocks             = { 1, 2 },
 };
 
 static struct zhpe_csr xdm_err_all_status = {
-    .pfs                = 0x0705088U,
-    .asic               = 0x0730088U,
+    .addr               = { 0x0705088, 0x0730088 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_pri_status = {
-    .pfs                = 0x0705080U,
-    .asic               = 0x0730080U,
+    .addr               = { 0x0705080, 0x0730080 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwa_all_status = {
-    .pfs                = 0x0705820U,
-    .asic               = 0x0730820U,
+    .addr               = { 0x0705820, 0x0730820 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwa_pri_status = {
-    .pfs                = 0x0705818U,
-    .asic               = 0x0730818U,
+    .addr               = { 0x0705818, 0x0730818 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwe_all_status = {
-    .pfs                = 0x0705808U,
-    .asic               = 0x0730808U,
+    .addr               = { 0x0705808, 0x0730808 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_err_hwe_pri_status = {
-    .pfs                = 0x0705800U,
-    .asic               = 0x0730800U,
+    .addr               = { 0x0705800, 0x0730800 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_size_cfg0 = {
-    .pfs                = 0x0705210U,
-    .asic               = 0x0730210U,
+    .addr               = { 0x0705210, 0x0730210 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_priority_cfg0 = {
-    .pfs                = 0x0705228U,
-    .asic               = 0x0730228U,
+    .addr               = { 0x0705228, 0x0730228 },
     .block              = &xdm_block,
 };
 
 static struct zhpe_csr xdm_priority_cfg1 = {
-    .pfs                = 0x0705230U,
-    .asic               = 0x0730230U,
+    .addr               = { 0x0705230, 0x0730230 },
     .block              = &xdm_block,
 };
 
 static int csr_access(struct slice *sl, struct zhpe_csr *zcsr,
-                      uint chip_id, uint blocknum,
-                      uint64_t *data, bool read)
+                      uint chip_id, uint blocknum, uint64_t *data, bool read)
 {
     int                 ret = -EIO;
+    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
     uint32_t            off = 0;
     int                 pos;
     uint32_t            val;
@@ -1919,14 +1915,14 @@ static int csr_access(struct slice *sl, struct zhpe_csr *zcsr,
     switch (zhpe_platform) {
 
     case ZHPE_PFSLICE:
-        csr = zcsr->pfs;
-        if (blocknum > 0)
-            return 0;
-        break;
-
+        chip_id = CHIP_ID_PFS0;
+        /* FALLTHROUGH */
     case ZHPE_WILDCAT:
-        csr = zcsr->asic;
+        csr = zcsr->addr[pidx];
+        if (blocknum >= zcsr->block->blocks[pidx])
+            return -EINVAL;
         off = chip_id * 0x800000U + blocknum * zcsr->block->block_size;
+        debug(DEBUG_PCI, "chip_id = %u, off 0x%x\n", chip_id, off);
         break;
 
     default:
@@ -2018,7 +2014,7 @@ static int csr_get_gcid(struct slice *sl, uint32_t *gcid)
     uint64_t            sid = 0;
     uint64_t            cid;
 
-    ret = csr_access_rd(sl, &ozs_core_reg_24, 0, 0, &cid);
+    ret = csr_access_rd(sl, &ozs_core_reg_24, CHIP_ID_OZS0, 0, &cid);
     if (ret < 0)
         goto out;
     if (!(cid & OZS_CORE_REG_24_CID0_VALID)) {
@@ -2027,7 +2023,7 @@ static int csr_get_gcid(struct slice *sl, uint32_t *gcid)
     }
 
     if (cid & OZS_CORE_REG_24_SID_VALID) {
-        ret = csr_access_rd(sl, &ozs_core_reg_23, 0, 0, &sid);
+        ret = csr_access_rd(sl, &ozs_core_reg_23, CHIP_ID_OZS0, 0, &sid);
         if (ret < 0)
             goto out;
         sid = (sid & ZHPE_GCID_SID_MASK) << ZHPE_GCID_SID_SHIFT;
@@ -2043,16 +2039,12 @@ out:
 static int csr_set_inb_cfg(struct slice *sl, uint chip_id)
 {
     int                 ret;
-    uint64_t            cfg;
+    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
     uint                blk;
 
-    for (blk = 0; blk < skw_shim_inb_block.blocks; blk++) {
-        ret = csr_access_rd(sl, &skw_shim_inb_cfg, chip_id, blk, &cfg);
-        if (ret < 0)
-            goto out;
-        cfg &= skw_shim_inb_cfg_mask;
-        cfg |= skw_shim_inb_cfg_bits;
-        ret = csr_access_wr(sl, &skw_shim_inb_cfg, chip_id, blk, cfg);
+    for (blk = 0; blk < skw_shim_inb_block.blocks[pidx]; blk++) {
+        ret = csr_access_rdwr(sl, &skw_shim_inb_cfg, chip_id, blk,
+                              skw_shim_inb_cfg_mask, skw_shim_inb_cfg_bits);
         if (ret < 0)
             goto out;
     }
@@ -2065,32 +2057,20 @@ static int csr_set_inb_cfg(struct slice *sl, uint chip_id)
 static int csr_set_xdm_prio(struct slice *sl, uint chip_id)
 {
     int                 ret;
-    uint64_t            cfg;
+    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
     uint                blk;
 
-    for (blk = 0; blk < xdm_block.blocks; blk++) {
-        ret = csr_access_rd(sl, &xdm_size_cfg0, chip_id, blk, &cfg);
+    for (blk = 0; blk < xdm_block.blocks[pidx]; blk++) {
+        ret = csr_access_rdwr(sl, &xdm_size_cfg0, chip_id, blk,
+                              xdm_size_cfg0_mask, xdm_size_cfg0_bits);
         if (ret < 0)
             goto out;
-        cfg &= xdm_size_cfg0_mask;
-        cfg |= xdm_size_cfg0_bits;
-        ret = csr_access_wr(sl, &xdm_size_cfg0, chip_id, blk, cfg);
+        ret = csr_access_rdwr(sl, &xdm_priority_cfg0, chip_id, blk,
+                              xdm_priority_cfg0_mask, xdm_priority_cfg0_bits);
         if (ret < 0)
             goto out;
-        ret = csr_access_rd(sl,&xdm_priority_cfg0, chip_id, blk, &cfg);
-        if (ret < 0)
-            goto out;
-        cfg &= xdm_priority_cfg0_mask;
-        cfg |= xdm_priority_cfg0_bits;
-        ret = csr_access_wr(sl, &xdm_priority_cfg0, chip_id, blk, cfg);
-        if (ret < 0)
-            goto out;
-        ret = csr_access_rd(sl, &xdm_priority_cfg1, chip_id, blk, &cfg);
-        if (ret < 0)
-            goto out;
-        cfg &= xdm_priority_cfg1_mask;
-        cfg |= xdm_priority_cfg1_bits;
-        ret = csr_access_wr(sl, &xdm_priority_cfg1, chip_id, blk, cfg);
+        ret = csr_access_rdwr(sl, &xdm_priority_cfg1, chip_id, blk,
+                              xdm_priority_cfg1_mask, xdm_priority_cfg1_bits);
         if (ret < 0)
             goto out;
     }
@@ -2103,10 +2083,11 @@ static int csr_set_xdm_prio(struct slice *sl, uint chip_id)
 static int csr_reset_logs(struct slice *sl, uint chip_id)
 {
     int                 ret = 0;
-    uint64_t            val;
+    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
     uint                blk;
+    uint64_t            val;
 
-    for (blk = 0; blk < xdm_block.blocks; blk++) {
+    for (blk = 0; blk < xdm_block.blocks[pidx]; blk++) {
         ret = csr_access_rdwr(sl, &xdm_err_hwa_all_status, chip_id, blk,
                               0, 0x1);
         if (ret < 0)
@@ -2132,7 +2113,7 @@ static int csr_reset_logs(struct slice *sl, uint chip_id)
                               0, 0xC);
         if (ret < 0)
             goto out;
-        /* Read things back to get them in the log. */
+        /* Read things back to get their final value in the log. */
         ret = csr_access_rd(sl, &xdm_err_all_status, chip_id, blk, &val);
         if (ret < 0)
             goto out;
@@ -2156,21 +2137,20 @@ static int probe_setup_csrs(struct bridge *br)
 
     for (i = 0; i < SLICES; i++) {
         if (SLICE_VALID(&br->slice[i])) {
-            chip_mask |= (1U << (i / 2 + 1));
+            chip_mask |= (1U << (i / 2 + CHIP_ID_SKW0));
             if (!sl)
                 sl = &br->slice[i];
         }
     }
-    for (chip_id = 1; chip_id < 3; chip_id++) {
+    for (chip_id = CHIP_ID_SKW0; chip_id <= CHIP_ID_SKW1; chip_id++) {
+        debug(DEBUG_PCI, "chip_id = %u, chip_mask 0x%x\n", chip_id, chip_mask);
         if (!(chip_mask & (1U << chip_id)))
             continue;
         /* OZS (chip 0) can only be access via mailbox on chip 1 */
         if (chip_id == 1) {
-            if (zhpe_platform != ZHPE_CARBON) {
-                ret = csr_get_gcid(sl, &br->gcid);
-                if (ret < 0)
-                    goto out;
-            }
+            ret = csr_get_gcid(sl, &br->gcid);
+            if (ret < 0)
+                goto out;
         }
         ret = csr_set_inb_cfg(sl, chip_id);
         if (ret < 0)
@@ -2392,9 +2372,11 @@ static int zhpe_probe(struct pci_dev *pdev,
     }
 
     if (br->num_slices == br->expected_slices) {
-        ret = probe_setup_csrs(br);
-        if (ret < 0)
-            goto err_free_interrupts;
+        if (zhpe_platform != ZHPE_CARBON) {
+            ret = probe_setup_csrs(br);
+            if (ret < 0)
+                goto err_free_interrupts;
+        }
 
         if (br->gcid == INVALID_GCID) {
             if (genz_gcid == INVALID_GCID) {
