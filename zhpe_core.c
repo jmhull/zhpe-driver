@@ -2368,7 +2368,7 @@ static int zhpe_probe(struct pci_dev *pdev,
     }
 
     if (br->num_slices == br->expected_slices) {
-        if (/* SLICE_VALID(&br->slice[0]) */ false) {
+        if (SLICE_VALID(&br->slice[0])) {
             /* allocate driver-driver msg queues on slice 0 only */
             ret = zhpe_msg_qalloc(br);
             if (ret) {
