@@ -205,7 +205,7 @@ MODULE_PARM_DESC(no_iommu, "System does not have an IOMMU (default=0)");
 /* Revisit Carbon: Gen-Z Global CID should come from bridge Core
  * Structure, but for now, it's a module parameter
  */
-uint genz_gcid = INVALID_GCID;
+static uint genz_gcid = INVALID_GCID;
 module_param(genz_gcid, uint, S_IRUGO);
 MODULE_PARM_DESC(genz_gcid, "Gen-Z bridge global CID");
 
@@ -1805,7 +1805,6 @@ enum {
     CHIP_ID_OZS0,
     CHIP_ID_SKW0,
     CHIP_ID_SKW1,
-    CHIP_ID_PFS0 = 0,
 };
 
 struct zhpe_csr_block {
@@ -1901,34 +1900,38 @@ static struct zhpe_csr xdm_priority_cfg1 = {
 };
 
 static int csr_access(struct slice *sl, struct zhpe_csr *zcsr,
-                      uint chip_id, uint blocknum, uint64_t *data, bool read)
+                      uint32_t chip_id, uint32_t blocknum,
+                      uint64_t *data, bool read)
 {
     int                 ret = -EIO;
-    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
-    uint32_t            off = 0;
-    int                 pos;
+    uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
+    uint32_t            off;
     uint32_t            val;
     uint32_t            cmd;
     uint32_t            csr;
+    int                 pos;
     uint                i;
+
+    off = blocknum * zcsr->block->block_size;
 
     switch (zhpe_platform) {
 
     case ZHPE_PFSLICE:
-        chip_id = CHIP_ID_PFS0;
-        /* FALLTHROUGH */
+        /* No chip_id on slice. */
+        break;
+
     case ZHPE_WILDCAT:
-        csr = zcsr->addr[pidx];
-        if (blocknum >= zcsr->block->blocks[pidx])
-            return -EINVAL;
-        off = chip_id * 0x800000U + blocknum * zcsr->block->block_size;
-        debug(DEBUG_PCI, "chip_id = %u, off 0x%x\n", chip_id, off);
+        off += chip_id * 0x800000U;
         break;
 
     default:
         return -EINVAL;
 
     }
+
+    csr = zcsr->addr[pidx];
+    if (blocknum >= zcsr->block->blocks[pidx])
+        return -EINVAL;
 
     pos = pci_find_ext_capability(sl->pdev, PCI_EXT_CAP_ID_DVSEC);
     if (!pos)
@@ -1974,26 +1977,28 @@ static int csr_access(struct slice *sl, struct zhpe_csr *zcsr,
     debug(DEBUG_PCI, "timeout\n");
 
 out:
-    dev_info(&sl->pdev->dev, "%s:sl %u csr 0x%x/0x%x %s val 0x%llx ret %d\n",
-             __func__, sl->phys_id, csr, off, (read ? "rd" : "wr"), *data, ret);
+    dev_info(&sl->pdev->dev,
+             "%s:sl %u csr 0x%x/0x%x/%u/%u %s val 0x%llx ret %d\n",
+             __func__, sl->phys_id, csr, off, chip_id, blocknum,
+             (read ? "rd" : "wr"), *data, ret);
 
     return ret;
 }
 
 static int csr_access_rd(struct slice *sl, struct zhpe_csr *zcsr,
-                         uint chip_id, uint blocknum, uint64_t *data)
+                         uint32_t chip_id, uint32_t blocknum, uint64_t *data)
 {
     return csr_access(sl, zcsr, chip_id, blocknum, data, true);
 }
 
 static int csr_access_wr(struct slice *sl, struct zhpe_csr *zcsr,
-                         uint chip_id, uint blocknum, uint64_t data)
+                         uint32_t chip_id, uint32_t blocknum, uint64_t data)
 {
     return csr_access(sl, zcsr, chip_id, blocknum, &data, false);
 }
 
 static int csr_access_rdwr(struct slice *sl, struct zhpe_csr *zcsr,
-                           uint chip_id, uint blocknum,
+                           uint32_t chip_id, uint32_t blocknum,
                            uint64_t mask, uint64_t data)
 {
     int                 ret;
@@ -2036,11 +2041,11 @@ out:
     return 0;
 }
 
-static int csr_set_inb_cfg(struct slice *sl, uint chip_id)
+static int csr_set_inb_cfg(struct slice *sl, uint32_t chip_id)
 {
     int                 ret;
-    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
-    uint                blk;
+    uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
+    uint32_t            blk;
 
     for (blk = 0; blk < skw_shim_inb_block.blocks[pidx]; blk++) {
         ret = csr_access_rdwr(sl, &skw_shim_inb_cfg, chip_id, blk,
@@ -2054,11 +2059,11 @@ static int csr_set_inb_cfg(struct slice *sl, uint chip_id)
     return ret;
 }
 
-static int csr_set_xdm_prio(struct slice *sl, uint chip_id)
+static int csr_set_xdm_prio(struct slice *sl, uint32_t chip_id)
 {
     int                 ret;
-    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
-    uint                blk;
+    uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
+    uint32_t            blk;
 
     for (blk = 0; blk < xdm_block.blocks[pidx]; blk++) {
         ret = csr_access_rdwr(sl, &xdm_size_cfg0, chip_id, blk,
@@ -2080,11 +2085,11 @@ static int csr_set_xdm_prio(struct slice *sl, uint chip_id)
     return ret;
 }
 
-static int csr_reset_logs(struct slice *sl, uint chip_id)
+static int csr_reset_logs(struct slice *sl, uint32_t chip_id)
 {
     int                 ret = 0;
-    uint                pidx = zhpe_platform - ZHPE_PFSLICE;
-    uint                blk;
+    uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
+    uint32_t            blk;
     uint64_t            val;
 
     for (blk = 0; blk < xdm_block.blocks[pidx]; blk++) {
@@ -2130,9 +2135,9 @@ static int csr_reset_logs(struct slice *sl, uint chip_id)
 static int probe_setup_csrs(struct bridge *br)
 {
     int                 ret = 0;
-    uint                chip_mask = 0;
-    uint                chip_id;
-    uint                i;
+    uint32_t            chip_mask = 0;
+    uint32_t            chip_id;
+    uint32_t            i;
     struct slice        *sl = NULL;
 
     for (i = 0; i < SLICES; i++) {
@@ -2362,16 +2367,19 @@ static int zhpe_probe(struct pci_dev *pdev,
         goto err_iommu_free;
     }
 
-    if (sl->id == 0) {
-        /* allocate driver-driver msg queues on slice 0 only */
-        ret = zhpe_msg_qalloc(br);
-        if (ret) {
-            debug(DEBUG_PCI, "zhpe_msg_qalloc failed with error %d\n", ret);
-            goto err_free_interrupts;
-        }
-    }
-
     if (br->num_slices == br->expected_slices) {
+        if (/* SLICE_VALID(&br->slice[0]) */ false) {
+            /* allocate driver-driver msg queues on slice 0 only */
+            ret = zhpe_msg_qalloc(br);
+            if (ret) {
+                debug(DEBUG_PCI, "zhpe_msg_qalloc failed with error %d\n", ret);
+                goto err_free_interrupts;
+            }
+        } else {
+            br->msg_xdm.br = br;
+            br->msg_rdm.br = br;
+        }
+
         if (zhpe_platform != ZHPE_CARBON) {
             ret = probe_setup_csrs(br);
             if (ret < 0)

@@ -50,7 +50,6 @@ extern const char zhpe_driver_name[];
 extern uint no_iommu;
 extern struct zhpe_global_shared_data *global_shared_data;
 extern bool zhpe_mcommit;
-extern uint genz_gcid;
 
 #define zprintk_caller(_lvl, _callf, _line, _fmt, ...)                  \
     printk(_lvl "%s:%s,%u,%d: " _fmt,                                   \
