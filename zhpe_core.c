@@ -83,18 +83,44 @@ module_param(wr_pusher_dvsec_28, uint, 0444);
 MODULE_PARM_DESC(wr_pusher_dvsec_28, "Write-pusher DVSEC offset 0x28");
 
 /*
- * Set acks pushed by write-pusher. Reset values are correct, but
- * were being cleared at one point.
+ * Driver CSR setting controls. Only fields and values the driver sets by
+ * default are mentioned; other bits are preserved;.
  *
- * SKW_SHIM_INB_CFG:
- * [0:0] rspzmmu_write_ack_type, value 1, default 1
- * [1:1] rdm_write_ack_type, value 0, default 0
- * [2:2] xdm_write_ack_type, value 0, default 0
- * [3:3] xdm_sync_ack_type, value 1, default 1
+ * SKW_SHIM_INB_CFG: Set acks for right pusher.
+ * [0:0] rspzmmu_write_ack_type, value 1
+ * [1:1] rdm_write_ack_type, value 0
+ * [2:2] xdm_write_ack_type, value 0
+ * [3:3] xdm_sync_ack_type, value 1
+ *
+ * XDM_REQUEST_CFG : disable queue stop on command-level error
+ * [11:11] dis_sqoce, value 1
+ *
+ * XDM_SIZE_CFG0: limit local/fabric move engine to two commands at a time.
+ * [28:24] fab_recirc, value 1
+ * [60:56] lcl_recirc, value 1
+ *
+ * XDM_PRIORITY_CFG0: limit local/fabric move engine to one command per prio
+ * [44:40] lcl_recirc_cap, value 0
+ * [52:48] fab_recirc_cap, value 0
+ *
+ * XDM_PRIORITY_CFG1: limit prio to 200 command pool entries
+ * [39:32] cmd_pool_cap, value 199
  */
 
 static ulong skw_shim_inb_cfg_mask      = ~0x000000000000000FUL;
 static ulong skw_shim_inb_cfg_bits      =  0x0000000000000009UL;
+
+static ulong xdm_request_cfg_mask       = ~0x0000000000000800UL;
+static ulong xdm_request_cfg_bits       =  0x0000000000000800UL;
+
+static ulong xdm_size_cfg0_mask         = ~0x1F0000001F000000UL;
+static ulong xdm_size_cfg0_bits         =  0x0100000001000000UL;
+
+static ulong xdm_priority_cfg0_mask     = ~0x001F1FFF00000000UL;
+static ulong xdm_priority_cfg0_bits     =  0x000000C700000000UL;
+
+static ulong xdm_priority_cfg1_mask     = ~0x001F1FFF00000000UL;
+static ulong xdm_priority_cfg1_bits     =  0x000000C700000000UL;
 
 module_param(skw_shim_inb_cfg_mask, ulong, 0444);
 MODULE_PARM_DESC(skw_shim_inb_cfg_mask,
@@ -103,24 +129,12 @@ module_param(skw_shim_inb_cfg_bits, ulong, 0444);
 MODULE_PARM_DESC(skw_shim_inb_cfg_bits,
                  "new = (current & mask) | (bits & ~mask)");
 
-/*
- * Queue priority settings:
- * XDM_SIZE_CFG0: limit local/fabric move engine to two commands at a time.
- * [28:24] fab_recirc, value 1, default 31
- * [60:56] lcl_recirc, value 1. default 31
- * XDM_PRIORITY_CFGX: limit local/fabric move engine to one command per prio
- * [44:40] lcl_recirc_cap, value 0, default 31
- * [52:48] fab_recirc_cap, value 0, default 31
- * XDM_PRIORITY_CFGX: limit prio to 200 command pool entries
- * [39:32] cmd_pool_cap, value 199, default 255
- */
-
-static ulong xdm_size_cfg0_mask         = ~0x1F0000001F000000UL;
-static ulong xdm_size_cfg0_bits         =  0x0100000001000000UL;
-static ulong xdm_priority_cfg0_mask     = ~0x001F1FFF00000000UL;
-static ulong xdm_priority_cfg0_bits     =  0x000000C700000000UL;
-static ulong xdm_priority_cfg1_mask     = ~0x001F1FFF00000000UL;
-static ulong xdm_priority_cfg1_bits     =  0x000000C700000000UL;
+module_param(xdm_request_cfg_mask, ulong, 0444);
+MODULE_PARM_DESC(xdm_requesst_cfg_mask,
+                 "new = (current & mask) | (bits & ~mask)");
+module_param(xdm_request_cfg_bits, ulong, 0444);
+MODULE_PARM_DESC(xdm_request_cfg_bits,
+                 "new = (current & mask) | (bits & ~mask)");
 
 module_param(xdm_size_cfg0_mask, ulong, 0444);
 MODULE_PARM_DESC(xdm_size_cfg0_mask, "new = (current & mask) | (bits & ~mask)");
@@ -1884,6 +1898,11 @@ static struct zhpe_csr xdm_err_hwe_pri_status = {
     .block              = &xdm_block,
 };
 
+static struct zhpe_csr xdm_request_cfg = {
+    .addr               = { 0x0705200, 0x0730200 },
+    .block              = &xdm_block,
+};
+
 static struct zhpe_csr xdm_size_cfg0 = {
     .addr               = { 0x0705210, 0x0730210 },
     .block              = &xdm_block,
@@ -2041,7 +2060,7 @@ out:
     return 0;
 }
 
-static int csr_set_inb_cfg(struct slice *sl, uint32_t chip_id)
+static int csr_set_shim_inb_cfg(struct slice *sl, uint32_t chip_id)
 {
     int                 ret;
     uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
@@ -2059,13 +2078,21 @@ static int csr_set_inb_cfg(struct slice *sl, uint32_t chip_id)
     return ret;
 }
 
-static int csr_set_xdm_prio(struct slice *sl, uint32_t chip_id)
+static int csr_set_xdm(struct slice *sl, uint32_t chip_id)
 {
     int                 ret;
     uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
     uint32_t            blk;
+    uint64_t            val;
 
     for (blk = 0; blk < xdm_block.blocks[pidx]; blk++) {
+        /* Disable stop on command-level error. */
+        ret = csr_access_rdwr(sl, &xdm_request_cfg, chip_id, blk,
+                              xdm_request_cfg_mask, xdm_request_cfg_bits);
+        if (ret < 0)
+            goto out;
+
+        /* Queue priority settings. */
         ret = csr_access_rdwr(sl, &xdm_size_cfg0, chip_id, blk,
                               xdm_size_cfg0_mask, xdm_size_cfg0_bits);
         if (ret < 0)
@@ -2078,21 +2105,8 @@ static int csr_set_xdm_prio(struct slice *sl, uint32_t chip_id)
                               xdm_priority_cfg1_mask, xdm_priority_cfg1_bits);
         if (ret < 0)
             goto out;
-    }
-    ret = 0;
 
- out:
-    return ret;
-}
-
-static int csr_reset_logs(struct slice *sl, uint32_t chip_id)
-{
-    int                 ret = 0;
-    uint32_t            pidx = zhpe_platform - ZHPE_PFSLICE;
-    uint32_t            blk;
-    uint64_t            val;
-
-    for (blk = 0; blk < xdm_block.blocks[pidx]; blk++) {
+        /* Reset logs */
         ret = csr_access_rdwr(sl, &xdm_err_hwa_all_status, chip_id, blk,
                               0, 0x1);
         if (ret < 0)
@@ -2118,7 +2132,7 @@ static int csr_reset_logs(struct slice *sl, uint32_t chip_id)
                               0, 0xC);
         if (ret < 0)
             goto out;
-        /* Read things back to get their final value in the log. */
+        /* Read error status back to get their final value in the log. */
         ret = csr_access_rd(sl, &xdm_err_all_status, chip_id, blk, &val);
         if (ret < 0)
             goto out;
@@ -2157,13 +2171,10 @@ static int probe_setup_csrs(struct bridge *br)
             if (ret < 0)
                 goto out;
         }
-        ret = csr_set_inb_cfg(sl, chip_id);
+        ret = csr_set_shim_inb_cfg(sl, chip_id);
         if (ret < 0)
             goto out;
-        ret = csr_set_xdm_prio(sl, chip_id);
-        if (ret < 0)
-            goto out;
-        ret = csr_reset_logs(sl, chip_id);
+        ret = csr_set_xdm(sl, chip_id);
         if (ret < 0)
             goto out;
     }
